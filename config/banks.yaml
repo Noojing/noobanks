@@ -1,0 +1,225 @@
+# NooBanks — Bank Definitions
+#
+# Each bank entry specifies:
+#   ticker  — primary exchange ticker (Bloomberg/Reuters convention)
+#   CIK     — SEC Central Index Key (10-digit, zero-padded; US-listed only)
+#   sources — where to fetch reports (EDGAR for US filers; IR page URLs for others)
+#   filings — expected report types (SEC form types for US; generic labels otherwise)
+# ---------------------------------------------------------------------------
+
+banks:
+  # ── United States (NYSE, SEC EDGAR) ────────────────────────────────────
+  - name: JPMorgan Chase & Co.
+    ticker: JPM
+    exchange: NYSE
+    market: US
+    cik: "0000019617"
+    sources:
+      edgar: true
+      investor_relations: https://www.jpmorganchase.com/ir
+    filings: [10-K, 10-Q, 8-K]
+
+  - name: Bank of America Corp.
+    ticker: BAC
+    exchange: NYSE
+    market: US
+    cik: "0000070858"
+    sources:
+      edgar: true
+      investor_relations: https://investor.bankofamerica.com
+    filings: [10-K, 10-Q, 8-K]
+
+  - name: Citigroup Inc.
+    ticker: C
+    exchange: NYSE
+    market: US
+    cik: "0000831001"
+    sources:
+      edgar: true
+      investor_relations: https://www.citigroup.com/global/investors
+    filings: [10-K, 10-Q, 8-K]
+
+  - name: Wells Fargo & Company
+    ticker: WFC
+    exchange: NYSE
+    market: US
+    cik: "0000072971"
+    sources:
+      edgar: true
+      investor_relations: https://www.wellsfargo.com/about/investor-relations
+    filings: [10-K, 10-Q, 8-K]
+
+  - name: Goldman Sachs Group Inc.
+    ticker: GS
+    exchange: NYSE
+    market: US
+    cik: "0000886982"
+    sources:
+      edgar: true
+      investor_relations: https://www.goldmansachs.com/investor-relations
+    filings: [10-K, 10-Q, 8-K]
+
+  - name: Morgan Stanley
+    ticker: MS
+    exchange: NYSE
+    market: US
+    cik: "0000895421"
+    sources:
+      edgar: true
+      investor_relations: https://www.morganstanley.com/about-us-ir
+    filings: [10-K, 10-Q, 8-K]
+
+  # ── China Mainland (SSE / SZSE) ───────────────────────────────────────
+  - name: Industrial & Commercial Bank of China (ICBC)
+    ticker: "601398.SH"
+    exchange: SSE
+    market: CN
+    sources:
+      investor_relations: https://www.icbc.com.cn/en/investor-relations
+    filings: [annual_report, interim_report, quarterly_report]
+
+  - name: China Construction Bank (CCB)
+    ticker: "601939.SH"
+    exchange: SSE
+    market: CN
+    sources:
+      investor_relations: http://www.ccb.com/en/investor
+    filings: [annual_report, interim_report, quarterly_report]
+
+  - name: Agricultural Bank of China (ABC)
+    ticker: "601288.SH"
+    exchange: SSE
+    market: CN
+    sources:
+      investor_relations: https://www.abchina.com/en/investor-relations
+    filings: [annual_report, interim_report, quarterly_report]
+
+  - name: Bank of China (BOC)
+    ticker: "601988.SH"
+    exchange: SSE
+    market: CN
+    sources:
+      investor_relations: https://www.boc.cn/en/investor
+    filings: [annual_report, interim_report, quarterly_report]
+
+  - name: Bank of Communications (BoCom)
+    ticker: "601328.SH"
+    exchange: SSE
+    market: CN
+    sources:
+      investor_relations: http://www.bankcomm.com/BankCommSite/en/investor
+    filings: [annual_report, interim_report, quarterly_report]
+
+  - name: Postal Savings Bank of China (PSBC)
+    ticker: "601658.SH"
+    exchange: SSE
+    market: CN
+    sources:
+      investor_relations: https://www.psbc.com/en/investor
+    filings: [annual_report, interim_report, quarterly_report]
+
+  - name: China Merchants Bank (CMB)
+    ticker: "600036.SH"
+    exchange: SSE
+    market: CN
+    sources:
+      investor_relations: https://www.cmbchina.com/cmbir
+    filings: [annual_report, interim_report, quarterly_report]
+
+  - name: Ping An Bank Co. Ltd.
+    ticker: "000001.SZ"
+    exchange: SZSE
+    market: CN
+    sources:
+      investor_relations: https://bank.pingan.com/en/investor
+    filings: [annual_report, interim_report, quarterly_report]
+
+  # ── Hong Kong (HKEX) ──────────────────────────────────────────────────
+  - name: HSBC Holdings plc
+    ticker: "00005.HK"
+    exchange: HKEX
+    market: HK
+    sources:
+      investor_relations: https://www.hsbc.com/investors
+    filings: [annual_report, interim_report, quarterly_report]
+
+  - name: Bank of China (Hong Kong) Ltd.
+    ticker: "02388.HK"
+    exchange: HKEX
+    market: HK
+    sources:
+      investor_relations: https://www.bochk.com/en/ir.html
+    filings: [annual_report, interim_report, quarterly_report]
+
+  - name: Hang Seng Bank Ltd.
+    ticker: "00011.HK"
+    exchange: HKEX
+    market: HK
+    sources:
+      investor_relations: https://www.hangseng.com/en-hk/about-us/investor-relations
+    filings: [annual_report, interim_report, quarterly_report]
+
+  - name: Standard Chartered PLC
+    ticker: "02888.HK"
+    exchange: HKEX
+    market: HK
+    sources:
+      investor_relations: https://www.sc.com/en/investors
+    filings: [annual_report, interim_report, quarterly_report]
+
+  - name: Bank of East Asia Ltd.
+    ticker: "00023.HK"
+    exchange: HKEX
+    market: HK
+    sources:
+      investor_relations: https://www.hkbea.com/html/en/bea-ir.html
+    filings: [annual_report, interim_report, quarterly_report]
+
+  - name: Dah Sing Financial Holdings Ltd.
+    ticker: "00440.HK"
+    exchange: HKEX
+    market: HK
+    sources:
+      investor_relations: https://www.dahsing.com/en/about-us/investor-relations
+    filings: [annual_report, interim_report, quarterly_report]
+
+  # ── United Kingdom (LSE) ──────────────────────────────────────────────
+  - name: HSBC Holdings plc
+    ticker: HSBA.L
+    exchange: LSE
+    market: UK
+    sources:
+      investor_relations: https://www.hsbc.com/investors
+    filings: [annual_report, interim_report, quarterly_report]
+
+  - name: Barclays PLC
+    ticker: BARC.L
+    exchange: LSE
+    market: UK
+    sources:
+      investor_relations: https://home.barclays/investor-relations
+    filings: [annual_report, interim_report, quarterly_report]
+
+  - name: Lloyds Banking Group plc
+    ticker: LLOY.L
+    exchange: LSE
+    market: UK
+    sources:
+      investor_relations: https://www.lloydsbankinggroup.com/investors
+    filings: [annual_report, interim_report, quarterly_report]
+
+  - name: NatWest Group plc
+    ticker: NWG.L
+    exchange: LSE
+    market: UK
+    sources:
+      investor_relations: https://www.natwestgroup.com/investors.html
+    filings: [annual_report, interim_report, quarterly_report]
+
+  - name: Standard Chartered PLC
+    ticker: STAN.L
+    exchange: LSE
+    market: UK
+    sources:
+      investor_relations: https://www.sc.com/en/investors
+    filings: [annual_report, interim_report, quarterly_report]
