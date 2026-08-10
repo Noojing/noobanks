@@ -74,28 +74,37 @@ curl -sI --max-time 15 -L -o /dev/null -w "HTTP %{http_code} | Size: %{size_down
 
 ### Step 4 — Download
 
+Reports are stored in year-first subfolders. Create the year folder first if it doesn't exist:
+
 ```bash
-curl -L --max-time 120 -o "src/data/raw/{ticker}_{report_type}_{year}.pdf" "{verified_url}"
+mkdir -p "src/data/raw/{year}"
+curl -L --max-time 120 -o "src/data/raw/{year}/{ticker}_{report_type}_{period}.pdf" "{verified_url}"
 ```
 
 Naming convention:
-- `{ticker}` — the primary ticker from banks.yaml, dots replaced with underscores (e.g. `BARC_L`, `601398_SH`)
-- `{report_type}` — `annual_report`, `10-K`, `10-Q`, `interim_report`, etc.
-- `{year}` — 4-digit year of the report (not the filing year)
+| Token | Description | Examples |
+|-------|-------------|---------|
+| `{year}` | 4-digit report year — **this is the subfolder name** | `2025` |
+| `{ticker}` | Primary ticker, dots → underscores | `BARC_L`, `601398_SH` |
+| `{report_type}` | Report form type | `10-K`, `10-Q`, `annual_report`, `interim_report`, `quarterly_report`, `pillar3`, `form-20-f` |
+| `{period}` | Reporting period | `FY` (full fiscal year), `Q1`–`Q4` (quarterly), `H1`/`H2` (half-year) |
 
-Examples: `BARC_L_annual_report_2025.pdf`, `JPM_10-K_2025.pdf`
+Examples:
+- `src/data/raw/2025/BAC_10-K_FY.pdf` — Bank of America 2025 annual 10-K
+- `src/data/raw/2025/JPM_10-Q_Q3.pdf` — JPMorgan Q3 2025 quarterly filing
+- `src/data/raw/2025/BARC_L_annual_report_FY.pdf` — Barclays 2025 annual report
 
 ### Step 5 — Validate
 
 ```bash
 # Check file exists and is non-empty
-ls -lh "src/data/raw/{filename}"
+ls -lh "src/data/raw/{year}/{filename}"
 
 # Verify it's a real PDF
-file "src/data/raw/{filename}"
+file "src/data/raw/{year}/{filename}"
 
 # Check PDF magic bytes
-head -c 4 "src/data/raw/{filename}" | xxd | grep -q "2550 4446" && echo "VALID PDF" || echo "INVALID"
+head -c 4 "src/data/raw/{year}/{filename}" | xxd | grep -q "2550 4446" && echo "VALID PDF" || echo "INVALID"
 ```
 
 On validation failure:
@@ -115,8 +124,8 @@ When asked to process all banks:
 
 ```
 Bank                    Ticker    Report              Status    Path
-JPMorgan Chase & Co.    JPM       10-K 2025           ✓ OK      src/data/raw/JPM_10-K_2025.pdf
-HSBC Holdings plc       00005.HK  annual_report 2025  ✗ FAIL    (404 on all candidates)
+JPMorgan Chase & Co.    JPM       10-K FY 2025        ✓ OK      src/data/raw/2025/JPM_10-K_FY.pdf
+HSBC Holdings plc       00005.HK  annual_report FY    ✗ FAIL    (404 on all candidates)
 ...
 Total: 18 succeeded, 2 failed, 5 skipped
 ```

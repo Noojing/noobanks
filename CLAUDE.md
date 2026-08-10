@@ -40,10 +40,20 @@ Python **3.14+** is required (see `.python-version`). All dependencies are manag
 
 ```
 src/data/
-├── raw/         # Downloaded PDFs (naming: {TICKER}_{report_type}_{year}.pdf)
-├── processed/   # Parsed markdown per report
-└── output/      # Structured metrics JSON per bank/period
+├── raw/           # Downloaded PDFs organized by year: raw/{YYYY}/{TICKER}_{report_type}_{period}.pdf
+│   └── 2025/
+│       ├── BAC_10-K_FY.pdf
+│       ├── JPM_10-K_FY.pdf
+│       └── ...
+├── processed/     # Parsed markdown per report (mirrors raw/ hierarchy)
+└── output/        # Structured metrics JSON per bank/period
 ```
+
+**Naming conventions**:
+- `{year}` — 4-digit year, used as the **subfolder** name
+- `{ticker}` — bank ticker, dots → underscores (e.g. `BARC_L`, `601398_SH`)
+- `{report_type}` — `10-K`, `10-Q`, `annual_report`, `interim_report`, `quarterly_report`
+- `{period}` — `FY` (full year), `Q1`–`Q4` (quarterly), `H1`/`H2` (half-year)
 
 ## Subagent
 
@@ -51,7 +61,7 @@ src/data/
 
 ## Key conventions
 
-- **Naming**: bank tickers use underscores instead of dots in filenames (e.g. `BARC_L`, `601398_SH`)
+- **Naming**: bank tickers use underscores instead of dots in filenames (e.g. `BARC_L`, `601398_SH`). Raw reports live in year subfolders: `raw/{YYYY}/{TICKER}_{report_type}_{period}.pdf`. Period is `FY` for annual, `Q1`–`Q4` for quarterly.
 - **Report fetching**: always prefer banks' own IR pages over third-party sources. Use HEAD requests to verify URLs before downloading full PDFs.
 - **US banks**: CIK numbers are stored in `banks.yaml` for SEC EDGAR access; IR pages are supplementary.
 - **Commits**: format as `FU-{MMDD}:{description}` (e.g. `FU-260809: add config for list of banks`).
