@@ -1,16 +1,35 @@
 [project]
 name = "noobanks"
 version = "0.1.0"
-description = "Add your description here"
+description = "Automated pipeline for fetching, parsing, and AI-extracting structured metrics from global bank financial reports"
 readme = "README.md"
 authors = [
     { name = "Zev Fu", email = "zev.fu@noojing.com" }
 ]
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "aiohttp>=3.10",
+    "beautifulsoup4>=4.12",
+    "lxml>=5.3",
+    "pydantic>=2.10",
+    "pyyaml>=6.0",
+    "rich>=13.9",
+    "tenacity>=9.0",
+    "typer>=0.15",
+]
 
 [project.scripts]
 noobanks = "noobanks:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+]
+
+[tool.uv]
+package = true
 
 [build-system]
 requires = ["uv_build>=0.12.3,<0.13.0"]

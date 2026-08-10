@@ -10,7 +10,9 @@
       "Bash(ls *)",
       "Bash(file *)",
       "Bash(head *)",
-      "Bash(grep *)"
+      "Bash(grep *)",
+      "Bash(git (add*|commit*|ls-remote*|log*|status*))",
+      "Bash(uv (sync*|run*))"
     ],
     "additionalDirectories": [
       "/tmp"
