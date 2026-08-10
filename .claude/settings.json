@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl *)",
+      "Bash(xxd)",
+      "Bash(pdftotext *)",
+      "Bash(pdfinfo *)",
+      "Bash(google-chrome *)",
+      "Bash(cp *)",
+      "Bash(ls *)",
+      "Bash(file *)",
+      "Bash(head *)",
+      "Bash(grep *)"
+    ],
+    "additionalDirectories": [
+      "/tmp"
+    ]
+  }
+}
