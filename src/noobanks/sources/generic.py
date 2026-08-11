@@ -43,47 +43,31 @@ REPORT_PATTERNS: dict[str, list[str]] = {
     "pillar3": ["pillar.3", "pillar-3", "pillar3", "pillar_3"],
 }
 
-# Sub-paths commonly found on IR landing pages
-IR_SUBPATHS = [
-    "reports-and-events",
-    "annual-reports",
-    "annual-report",
-    "quarterly-results",
-    "financial-results",
-    "financial-reports",
-    "results-and-reports",
-    "results-centre",
-    "results-center",
-    "investor-relations/reports",
-    "investors/reports",
-    "about-us/investor-relations",
-    "filings",
-    "financial-information",
+# Keywords for detecting report-related navigation links in HTML.
+# Matched against <a> tag text OR href. Links matching these keywords
+# are followed during recursive crawling to find report download pages.
+NAV_KEYWORDS: list[str] = [
+    "annual-report", "annual_reports", "annual report",
+    "interim-report", "interim_reports", "interim report",
+    "quarterly-report", "quarterly_reports", "quarterly report",
+    "financial-report", "financial_reports", "financial report",
+    "financial-results", "financial_results", "financial results",
+    "performance-report", "performance_reports", "performance report",
+    "results-and-reports", "results-and-announcements",
+    "reports-and-events", "reports-and-presentations",
+    "earnings", "filings", "sec-filings",
+    "regulatory-news", "regulatory_filings",
+    "pillar-3", "pillar_3", "pillar3",
 ]
 
-# Per-market URL construction patterns (fallback when scraping fails)
-MARKET_HEURISTICS = {
-    "UK": [
-        "/content/dam/{domain_brand}/documents/investor-relations/{year}/{bank_name_short}-annual-report-{year}.pdf",
-        "/content/dam/{domain_brand}/documents/investors/{year}/{bank_name_short}-annual-report-{year}.pdf",
-        "/investors/results-and-reports/annual-report/{year}/download",
-    ],
-    "CN": [
-        "/en/investor-relations/reports/{year}/annual-report.pdf",
-        "/en/investor/reports/{year}/annual-report.pdf",
-        "/investor-relations/reports/{year}/annual-report.pdf",
-    ],
-    "HK": [
-        "/investor-relations/reports/{year}/annual-report.pdf",
-        "/en/investor-relations/reports/{year}/annual-report.pdf",
-        "/en/ir/reports/{year}/annual-report.pdf",
-    ],
-    "US": [
-        "/investor-relations/annual-reports/{year}/annual-report.pdf",
-        "/about-us/investor-relations/annual-reports/{year}/annual-report.pdf",
-    ],
+# Navigation-link text that should be excluded (too generic / not report-related)
+NAV_EXCLUDE_TEXT: set[str] = {
+    "home", "about", "about us", "contact", "contact us",
+    "careers", "news", "media", "press", "search", "login",
+    "share price", "stock", "corporate governance", "sustainability",
+    "csr", "esg", "cookie", "privacy", "terms", "accessibility",
+    "sitemap", "rss", "email alerts", "subscribe",
 }
-
 
 class GenericIrAdapter(SourceAdapter):
     """Scrapes bank investor-relations websites to discover and download PDF reports.
@@ -176,12 +160,13 @@ class GenericIrAdapter(SourceAdapter):
     async def discover_urls(
         self, bank: BankSpec, report_type: str, year: int
     ) -> list[str]:
-        """Discover PDF URLs using layered heuristics.
+        """Discover PDF URLs by crawling from the IR landing page.
 
-        Strategy (zero-token where possible):
-        1. Scrape IR landing page for matching PDF links
-        2. Follow common IR sub-paths and scrape those
-        3. Fall back to per-market URL construction patterns
+        Strategy:
+        1. Validate the IR URL is reachable (surface dead config early)
+        2. BFS crawl from the IR landing page, following report-related
+           navigation links to find pages with PDF downloads
+        3. Fall back to per-market URL construction heuristics if crawl fails
         """
         ir_base = bank.sources.investor_relations.rstrip("/")
         candidates: set[str] = set()
@@ -189,23 +174,31 @@ class GenericIrAdapter(SourceAdapter):
         year_str = str(year)
 
         async with self._get_session() as session:
-            # 1. Scrape the IR landing page
-            page_links = await self._scrape_page_for_pdfs(
-                session, ir_base, report_type, year_str, year_short
-            )
-            candidates.update(page_links)
+            # 1. Validate IR URL before crawling
+            validation = await self._validate_ir_url(session, ir_base)
+            if not validation["valid"]:
+                logger.warning(
+                    "IR URL invalid for %s: %s", bank.ticker, validation["error"]
+                )
 
-            # 2. Follow common sub-paths
-            subpath_links = await self._scrape_subpaths(
+            # 2. Crawl from the IR landing page (even if validation warns —
+            #    a "probably JS" page might still have static links we can find)
+            crawl_links = await self._crawl_for_report_pages(
                 session, ir_base, report_type, year_str, year_short
             )
-            candidates.update(subpath_links)
+            candidates.update(crawl_links)
 
         # 3. Deduplicate and sort (prefer PDFs with year in name)
-        candidates_list = sorted(candidates, key=lambda u: self._url_score(u, year_str), reverse=True)
+        candidates_list = sorted(
+            candidates, key=lambda u: self._url_score(u, year_str), reverse=True
+        )
 
         if not candidates_list:
             # 4. Fallback: try constructed URLs from per-market patterns
+            logger.info(
+                "Crawl found no PDFs for %s %s %s; trying URL construction",
+                bank.ticker, report_type, year,
+            )
             candidates_list = self._construct_candidates(bank, year_str, year_short)
 
         logger.info(
@@ -352,38 +345,6 @@ class GenericIrAdapter(SourceAdapter):
 
         return self._extract_pdf_links(html, base_url, report_type, year_str, year_short)
 
-    async def _scrape_subpaths(
-        self,
-        session: aiohttp.ClientSession,
-        ir_base: str,
-        report_type: str,
-        year_str: str,
-        year_short: str,
-    ) -> list[str]:
-        """Try each common IR sub-path and scrape for PDFs."""
-        all_links: list[str] = []
-        domain = urlparse(ir_base).netloc
-
-        for subpath in IR_SUBPATHS:
-            candidate_url = f"{ir_base}/{subpath}"
-            await self._rate_limit(domain)
-            try:
-                async with session.get(
-                    candidate_url, allow_redirects=True, max_redirects=3
-                ) as resp:
-                    if resp.status != 200:
-                        continue
-                    html = await resp.text()
-            except (aiohttp.ClientError, asyncio.TimeoutError):
-                continue
-
-            links = self._extract_pdf_links(
-                html, candidate_url, report_type, year_str, year_short
-            )
-            all_links.extend(links)
-
-        return all_links
-
     def _extract_pdf_links(
         self,
         html: str,
@@ -404,11 +365,10 @@ class GenericIrAdapter(SourceAdapter):
         patterns = REPORT_PATTERNS.get(report_type, [report_type.lower()])
         soup = BeautifulSoup(html, "lxml")
         links: list[str] = []
-        year_next = str(int(year_str) + 1)
 
         def _year_in_path(href: str) -> bool:
-            """Check if year or year+1 appears in URL path segments."""
-            return f"/{year_str}" in href or f"/{year_next}" in href
+            """Check if the target fiscal year appears in URL path segments."""
+            return f"/{year_str}" in href
 
         def _year_in_text(text: str) -> bool:
             """Check if year (full or short) appears in text."""
@@ -455,40 +415,168 @@ class GenericIrAdapter(SourceAdapter):
 
         return links
 
+    def _extract_nav_links(self, html: str, base_url: str) -> list[str]:
+        """Extract report-related navigation links from an IR page.
+
+        Finds <a> tags whose text or href contains report-related keywords
+        (e.g. 'Annual Reports', 'Financial Results', 'Performance Reports').
+        These are URLs to follow during recursive crawling — not direct PDF links.
+
+        Excludes:
+        - Direct PDF links (handled separately by _extract_pdf_links)
+        - Generic navigation (Home, Contact, About, Careers, etc.)
+        - Already-seen URLs (dedup)
+
+        Args:
+            html: Raw HTML of the page.
+            base_url: Base URL for resolving relative links.
+
+        Returns:
+            List of full URLs to follow, ordered with most report-relevant first.
+        """
+        soup = BeautifulSoup(html, "lxml")
+        seen: set[str] = set()
+        links: list[str] = []
+
+        for a_tag in soup.find_all("a", href=True):
+            href = a_tag["href"].strip()
+            href_lower = href.lower()
+
+            # Skip PDFs, javascript, mailto, anchors
+            if href_lower.endswith(".pdf"):
+                continue
+            if href.startswith(("javascript:", "mailto:", "#")):
+                continue
+
+            link_text = a_tag.get_text(strip=True).lower()
+
+            # Skip generic navigation links
+            if link_text in NAV_EXCLUDE_TEXT:
+                continue
+            # Skip links whose text is purely a year (e.g. "2025年")
+            if link_text and link_text.replace("年", "").strip().isdigit():
+                continue
+
+            # Check if either href or link text matches a report keyword
+            text_or_href = f"{href_lower} {link_text}"
+            matches = any(kw in text_or_href for kw in NAV_KEYWORDS)
+
+            if matches:
+                full_url = urljoin(base_url, href)
+                if full_url not in seen:
+                    seen.add(full_url)
+                    links.append(full_url)
+
+        return links
+
+    async def _crawl_for_report_pages(
+        self,
+        session: aiohttp.ClientSession,
+        ir_base: str,
+        report_type: str,
+        year_str: str,
+        year_short: str,
+        max_depth: int = 2,
+    ) -> list[str]:
+        """BFS crawl from IR landing page to discover report PDF URLs.
+
+        Starting from ir_base, fetches each page, extracts:
+        1. Direct PDF links (via _extract_pdf_links)
+        2. Navigation links (via _extract_nav_links) to follow next
+
+        Crawling rules:
+        - Same domain only: won't follow links to external sites
+        - Max depth: stops after following links N levels deep
+        - Cycle prevention: tracks visited URLs in a set
+        - Rate limiting: respects per-domain delay between requests
+
+        Args:
+            session: aiohttp session for HTTP requests.
+            ir_base: Starting URL (the bank's IR landing page).
+            report_type: Target report type key (annual_report, 10-K, etc.).
+            year_str: 4-digit year as string ("2025").
+            year_short: 2-digit year as string ("25").
+            max_depth: How many levels of links to follow. 0 = only ir_base.
+
+        Returns:
+            List of PDF URLs discovered during the crawl.
+        """
+        domain = urlparse(ir_base).netloc
+        visited: set[str] = set()
+        all_pdf_links: list[str] = []
+
+        from collections import deque
+        queue: deque[tuple[str, int]] = deque([(ir_base, 0)])
+
+        while queue:
+            url, depth = queue.popleft()
+
+            if url in visited:
+                continue
+            visited.add(url)
+
+            # Fetch the page
+            await self._rate_limit(domain)
+            try:
+                async with session.get(
+                    url, allow_redirects=True, max_redirects=3
+                ) as resp:
+                    if resp.status != 200:
+                        logger.debug("Crawl skip %s → HTTP %d", url, resp.status)
+                        continue
+                    html = await resp.text()
+            except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+                logger.debug("Crawl skip %s → %s", url, exc)
+                continue
+
+            # Extract PDF links from this page
+            pdf_links = self._extract_pdf_links(
+                html, url, report_type, year_str, year_short
+            )
+            for link in pdf_links:
+                if link not in all_pdf_links:
+                    all_pdf_links.append(link)
+
+            # If we found PDFs at this depth, don't crawl deeper
+            # (we already have results from the right page)
+            if pdf_links and depth > 0:
+                continue
+
+            # Follow navigation links if we haven't hit max depth
+            if depth < max_depth:
+                nav_links = self._extract_nav_links(html, url)
+                for nav_url in nav_links:
+                    nav_domain = urlparse(nav_url).netloc
+                    # Stay on the same domain
+                    if nav_domain == domain and nav_url not in visited:
+                        queue.append((nav_url, depth + 1))
+
+        logger.debug(
+            "Crawl from %s: visited %d pages, found %d PDFs (max depth %d)",
+            ir_base, len(visited), len(all_pdf_links), max_depth,
+        )
+        return all_pdf_links
+
     def _construct_candidates(
         self, bank: BankSpec, year_str: str, year_short: str
     ) -> list[str]:
-        """Build candidate URLs from per-market heuristics (last-resort fallback)."""
-        domain = bank.domain
-        domain_brand = domain.split(".")[-2] if domain else ""
+        """Build candidate URLs from common patterns (last-resort fallback).
+
+        Used only when the IR crawl finds no PDFs. Constructs plausible
+        URLs from the IR base + common annual-report filename patterns.
+        """
         name_short = bank.name.split()[0].lower()
-
-        # Use market-specific templates
-        templates = MARKET_HEURISTICS.get(
-            bank.market, MARKET_HEURISTICS["US"]
-        )
-
         candidates: list[str] = []
         ir_base = bank.sources.investor_relations.rstrip("/")
 
-        for template in templates:
-            url_path = template.format(
-                domain_brand=domain_brand,
-                bank_name_short=name_short,
-                year=year_str,
-            )
-            if not url_path.startswith("http"):
-                candidates.append(f"{ir_base}{url_path}")
-            else:
-                candidates.append(url_path)
-
-        # Also try the IR base + common patterns
         for suffix in [
             f"/{year_str}/annual-report-{year_str}.pdf",
             f"/reports/{year_str}/annual-report-{year_str}.pdf",
             f"/annual-report-{year_str}.pdf",
             f"/Annual-Report-{year_str}.pdf",
             f"/{name_short}-annual-report-{year_str}.pdf",
+            f"/{year_str}/annual_report_{year_str}.pdf",
+            f"/reports-and-events/annual-reports/{year_str}/annual-report-{year_str}.pdf",
         ]:
             candidates.append(f"{ir_base}{suffix}")
 

@@ -14,8 +14,7 @@ from aiohttp import ClientResponseError
 from noobanks.config.models import BankSpec, SourceConfig
 from noobanks.sources.base import Report
 from noobanks.sources.generic import (
-    IR_SUBPATHS,
-    MARKET_HEURISTICS,
+    NAV_KEYWORDS,
     REPORT_PATTERNS,
     GenericIrAdapter,
 )
@@ -164,22 +163,27 @@ class TestUrlScore:
 
 
 class TestConstructCandidates:
-    def test_builds_market_specific_urls(self):
+    def test_builds_common_pattern_urls(self):
+        """Simplified constructor builds URLs from common patterns."""
         bank = _make_bank(ticker="BARC.L", market="UK")
         adapter = GenericIrAdapter()
         candidates = adapter._construct_candidates(bank, "2025", "25")
         assert len(candidates) > 0
-        # The bank_name_short is derived from bank.name ("Test Bank" → "test")
-        # Should contain at least one URL with the bank name or IR base path
-        assert any("test" in c.lower() or "barc-l" in c.lower() for c in candidates)
+        assert any("2025" in c for c in candidates)
+        assert any(c.endswith(".pdf") for c in candidates)
 
-    def test_us_market_uses_different_templates(self):
+    def test_includes_ir_base_in_urls(self):
+        """All candidate URLs should be under the bank's IR base."""
         bank = _make_bank(ticker="JPM", market="US")
         adapter = GenericIrAdapter()
         candidates = adapter._construct_candidates(bank, "2025", "25")
         assert len(candidates) > 0
+        # All should start with the IR base
+        ir_base = bank.sources.investor_relations.rstrip("/")
+        assert all(c.startswith(ir_base) for c in candidates)
 
     def test_cn_market_builds_urls(self):
+        """CN banks also get candidate URLs."""
         bank = _make_bank(ticker="601398.SH", market="CN")
         adapter = GenericIrAdapter()
         candidates = adapter._construct_candidates(bank, "2025", "25")
@@ -196,13 +200,12 @@ class TestReportPatterns:
             assert rt in REPORT_PATTERNS
             assert len(REPORT_PATTERNS[rt]) > 0
 
-    def test_ir_subpaths_not_empty(self):
-        assert len(IR_SUBPATHS) > 0
-
-    def test_market_heuristics_cover_all_markets(self):
-        for market in ["US", "CN", "HK", "UK"]:
-            assert market in MARKET_HEURISTICS
-            assert len(MARKET_HEURISTICS[market]) > 0
+    def test_nav_keywords_not_empty(self):
+        """NAV_KEYWORDS should be populated with report-related keywords."""
+        assert len(NAV_KEYWORDS) > 0
+        assert "annual-report" in NAV_KEYWORDS or "annual_report" in NAV_KEYWORDS
+        assert "financial-results" in NAV_KEYWORDS or "financial_results" in NAV_KEYWORDS
+        assert "performance-report" in NAV_KEYWORDS or "performance_reports" in NAV_KEYWORDS
 
 
 # ── Rate limiting ──────────────────────────────────────────────────────────
@@ -315,15 +318,15 @@ class TestExtractPdfLinksAdvanced:
         )
         assert len(links) == 1
 
-    def test_matches_year_in_path_segment_abc_pattern(self):
-        """ABC pattern: /202603/P02026042...pdf matches FY2025 via publication year."""
+    def test_year_in_path_only_matches_fiscal_year(self):
+        """/202603/ should NOT match FY2025 — only the actual fiscal year
+        appears in path segments. The year+1 assumption was removed."""
         adapter = GenericIrAdapter()
         html = '<a href="./202603/P020260423652699711023.pdf">(Online Reading)</a>'
         links = adapter._extract_pdf_links(
             html, "https://bank.example.com/ir/", "annual_report", "2025", "25"
         )
-        assert len(links) == 1
-        assert "202603" in links[0]
+        assert len(links) == 0, "Year+1 removed: /202603/ does not contain 2025"
 
     def test_matches_fy_year_in_path_segment(self):
         """Path with FY year directly: /2025/report.pdf should match."""
@@ -453,6 +456,88 @@ class TestValidateIrUrl:
         result = await adapter._validate_ir_url(mock_session, "https://nonexistent.example.com")
         assert result["valid"] is False
         assert "connection" in result["error"].lower()
+
+
+# ── Navigation link extraction ────────────────────────────────────────────
+
+
+class TestExtractNavLinks:
+    """Tests for _extract_nav_links — discover report-related pages from HTML."""
+
+    def test_extracts_annual_reports_link(self):
+        """'Annual Reports' link text should be extracted."""
+        adapter = GenericIrAdapter()
+        html = '<a href="/ir/annual-reports/">Annual Reports</a>'
+        links = adapter._extract_nav_links(html, "https://bank.example.com/ir/")
+        assert "https://bank.example.com/ir/annual-reports/" in links
+
+    def test_extracts_financial_results_link(self):
+        """'Financial Results' in href should be extracted."""
+        adapter = GenericIrAdapter()
+        html = '<a href="/investors/financial-results/2025">View Results</a>'
+        links = adapter._extract_nav_links(html, "https://bank.example.com")
+        assert len(links) >= 1
+        assert "financial-results" in links[0]
+
+    def test_extracts_performance_reports_link(self):
+        """'Performance Reports' — ABC's actual label — should be extracted."""
+        adapter = GenericIrAdapter()
+        html = '<a href="./performance-reports/">Performance Reports</a>'
+        links = adapter._extract_nav_links(
+            html, "https://www.abchina.com/en/investor-relations/"
+        )
+        assert len(links) >= 1
+        assert "performance-reports" in links[0]
+
+    def test_extracts_quarterly_reports_link(self):
+        """Sub-page links like 'Quarterly Reports' should be found."""
+        adapter = GenericIrAdapter()
+        html = '<a href="/ir/quarterly-reports/">Quarterly Reports</a>'
+        links = adapter._extract_nav_links(html, "https://bank.example.com/ir/")
+        assert len(links) >= 1
+
+    def test_ignores_home_and_contact_links(self):
+        """Navigation links like 'Home', 'Contact Us' should be excluded."""
+        adapter = GenericIrAdapter()
+        html = (
+            '<a href="/">Home</a>'
+            '<a href="/contact">Contact Us</a>'
+            '<a href="/about">About</a>'
+            '<a href="/ir/annual-reports/">Annual Reports</a>'
+        )
+        links = adapter._extract_nav_links(html, "https://bank.example.com/ir/")
+        assert len(links) == 1
+        assert "annual-reports" in links[0]
+
+    def test_deduplicates_urls(self):
+        """Duplicate navigation URLs should be removed."""
+        adapter = GenericIrAdapter()
+        html = (
+            '<a href="/reports/">Annual Reports</a>'
+            '<a href="/reports/">Reports</a>'
+        )
+        links = adapter._extract_nav_links(html, "https://bank.example.com")
+        assert len(links) == 1
+
+    def test_excludes_pdf_links(self):
+        """Navigation extraction should exclude direct PDF links."""
+        adapter = GenericIrAdapter()
+        html = (
+            '<a href="/reports/2025.pdf">Annual Report PDF</a>'
+            '<a href="/reports-and-events/">Reports and Events</a>'
+        )
+        links = adapter._extract_nav_links(html, "https://bank.example.com")
+        assert len(links) == 1
+        assert links[0].endswith("/reports-and-events/")
+
+    def test_resolves_relative_urls(self):
+        """Relative URLs should be resolved against base_url."""
+        adapter = GenericIrAdapter()
+        html = '<a href="./annual-reports/">Annual Reports</a>'
+        links = adapter._extract_nav_links(
+            html, "https://bank.example.com/investors/"
+        )
+        assert links[0] == "https://bank.example.com/investors/annual-reports/"
 
 
 # ── Constructor ────────────────────────────────────────────────────────────
