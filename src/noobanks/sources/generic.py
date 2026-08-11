@@ -453,13 +453,18 @@ class GenericIrAdapter(SourceAdapter):
             # Skip generic navigation links
             if link_text in NAV_EXCLUDE_TEXT:
                 continue
-            # Skip links whose text is purely a year (e.g. "2025年")
-            if link_text and link_text.replace("年", "").strip().isdigit():
-                continue
-
-            # Check if either href or link text matches a report keyword
+            # Check if either href or link text matches a report keyword,
+            # or if the link text is a year selector (e.g. "2024", "2025年")
+            # — these are valid year-specific report page links on IR sites
             text_or_href = f"{href_lower} {link_text}"
             matches = any(kw in text_or_href for kw in NAV_KEYWORDS)
+            is_year_link = bool(
+                link_text
+                and link_text.replace("年", "").replace(" ", "").strip().isdigit()
+                and len(link_text.replace("年", "").replace(" ", "").strip()) == 4
+            )
+            if not matches and not is_year_link:
+                continue
 
             if matches:
                 full_url = urljoin(base_url, href)
@@ -568,6 +573,15 @@ class GenericIrAdapter(SourceAdapter):
         name_short = bank.name.split()[0].lower()
         candidates: list[str] = []
         ir_base = bank.sources.investor_relations.rstrip("/")
+
+        # Strip page filename if ir_base ends in .html / .aspx / .shtml etc.
+        # ICBC: ".../page/1220435982957096960.html" → ".../page/"
+        parsed = urlparse(ir_base)
+        path = parsed.path
+        last_seg = path.rsplit("/", 1)[-1]
+        if "." in last_seg and not last_seg.startswith("."):
+            dir_path = path.rsplit("/", 1)[0] + "/"
+            ir_base = f"{parsed.scheme}://{parsed.netloc}{dir_path}".rstrip("/")
 
         for suffix in [
             f"/{year_str}/annual-report-{year_str}.pdf",
