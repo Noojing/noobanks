@@ -56,7 +56,7 @@ def sample_cn_bank_spec() -> BankSpec:
         market="CN",
         sources=SourceConfig(
             edgar=False,
-            investor_relations="https://www.icbc.com.cn/en/investor-relations",
+            investor_relations="https://www.icbc-ltd.com/en/page/1220435982957096960.html",
         ),
         filings=["annual_report", "interim_report", "quarterly_report"],
     )

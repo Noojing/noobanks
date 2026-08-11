@@ -52,7 +52,7 @@ class TestBankSpec:
         assert sample_bank_spec.domain == "home.barclays"
 
     def test_domain_from_cn_bank(self, sample_cn_bank_spec: BankSpec):
-        assert sample_cn_bank_spec.domain == "www.icbc.com.cn"
+        assert sample_cn_bank_spec.domain == "www.icbc-ltd.com"
 
     def test_default_filings_empty(self):
         bank = BankSpec(

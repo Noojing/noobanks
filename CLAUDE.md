@@ -59,9 +59,13 @@ src/data/
 
 - **`.claude/agents/report-fetcher.md`** — a project-level agent type (`report-fetcher`) that downloads financial reports from banks' official IR pages. Uses `curl` + `grep` for zero-token URL discovery, with WebSearch as last-resort fallback. Target model: `haiku`. Available after session restart.
 
+## Superpowers configuration
+
+- **Plan location**: Save superpowers plans to `~/.claude/plans/superpowers/` (overrides the default `docs/superpowers/plans/`)
+
 ## Key conventions
 
 - **Naming**: bank tickers use underscores instead of dots in filenames (e.g. `BARC_L`, `601398_SH`). Raw reports live in year subfolders: `raw/{YYYY}/{TICKER}_{report_type}_{period}.pdf`. Period is `FY` for annual, `Q1`–`Q4` for quarterly.
 - **Report fetching**: always prefer banks' own IR pages over third-party sources. Use HEAD requests to verify URLs before downloading full PDFs.
 - **US banks**: CIK numbers are stored in `banks.yaml` for SEC EDGAR access; IR pages are supplementary.
-- **Commits**: format as `FU-{MMDD}:{description}` (e.g. `FU-260809: add config for list of banks`).
+- **Commits**: format as `FU-{YYMMDD}:{description}` (e.g. `FU-260809: add config for list of banks`).

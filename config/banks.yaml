@@ -75,7 +75,7 @@ banks:
     exchange: SSE
     market: CN
     sources:
-      investor_relations: https://www.icbc.com.cn/en/investor-relations
+      investor_relations: https://www.icbc-ltd.com/en/page/1220435982957096960.html
     filings: [annual_report, interim_report, quarterly_report]
 
   - name: China Construction Bank (CCB)
@@ -83,7 +83,7 @@ banks:
     exchange: SSE
     market: CN
     sources:
-      investor_relations: http://www.ccb.com/en/investor
+      investor_relations: http://www.ccb.com/eng/investor/index.shtml
     filings: [annual_report, interim_report, quarterly_report]
 
   - name: Agricultural Bank of China (ABC)
@@ -115,7 +115,7 @@ banks:
     exchange: SSE
     market: CN
     sources:
-      investor_relations: https://www.psbc.com/en/investor
+      investor_relations: https://www.psbc.com/en/investor_relations/finance/financial_reports/
     filings: [annual_report, interim_report, quarterly_report]
 
   - name: China Merchants Bank (CMB)
@@ -131,7 +131,7 @@ banks:
     exchange: SZSE
     market: CN
     sources:
-      investor_relations: https://bank.pingan.com/en/investor
+      investor_relations: http://bank.pingan.com/en/touzizheguanxijixinwen.shtml
     filings: [annual_report, interim_report, quarterly_report]
 
   # ── Hong Kong (HKEX) ──────────────────────────────────────────────────
@@ -148,7 +148,7 @@ banks:
     exchange: HKEX
     market: HK
     sources:
-      investor_relations: https://www.bochk.com/en/ir.html
+      investor_relations: https://www.bochk.com/en/aboutus/ir.html
     filings: [annual_report, interim_report, quarterly_report]
 
   - name: Hang Seng Bank Ltd.
@@ -172,7 +172,7 @@ banks:
     exchange: HKEX
     market: HK
     sources:
-      investor_relations: https://www.hkbea.com/html/en/bea-ir.html
+      investor_relations: https://www.hkbea.com/html/en/bea-about-bea-investor-communication.html
     filings: [annual_report, interim_report, quarterly_report]
 
   - name: Dah Sing Financial Holdings Ltd.
