@@ -6,7 +6,7 @@ import asyncio
 import logging
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 from urllib.parse import urljoin, urlparse
 
 import aiohttp
@@ -254,6 +254,62 @@ class GenericIrAdapter(SourceAdapter):
             except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
                 logger.debug("HEAD %s → error: %s", url, exc)
                 return None
+
+    async def _validate_ir_url(
+        self,
+        session: aiohttp.ClientSession,
+        url: str,
+    ) -> dict[str, Any]:
+        """Check whether an IR URL is reachable and contains real content.
+
+        Catches three failure modes:
+        1. HTTP errors (404, 500, etc.)
+        2. JS-only shells (tiny HTML with a redirect script, no real links)
+        3. Network/connection errors
+
+        Returns:
+            {"valid": True} if the URL looks usable for scraping.
+            {"valid": False, "error": "<reason>"} otherwise.
+        """
+        domain = urlparse(url).netloc
+        await self._rate_limit(domain)
+
+        try:
+            async with session.get(
+                url, allow_redirects=True, max_redirects=3
+            ) as resp:
+                if resp.status != 200:
+                    return {
+                        "valid": False,
+                        "error": f"IR URL returned HTTP {resp.status}: {url}",
+                    }
+
+                html = await resp.text()
+                html_size = len(html)
+
+                soup = BeautifulSoup(html, "lxml")
+                link_count = len(soup.find_all("a", href=True))
+
+                if html_size < 1000 and link_count == 0:
+                    return {
+                        "valid": False,
+                        "error": (
+                            f"IR URL appears to be a JS-rendered shell "
+                            f"({html_size} bytes, {link_count} links): {url}"
+                        ),
+                    }
+
+                logger.debug(
+                    "IR URL validated: %s (%d bytes, %d links)",
+                    url, html_size, link_count,
+                )
+                return {"valid": True}
+
+        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+            return {
+                "valid": False,
+                "error": f"IR URL connection failed: {url} — {exc}",
+            }
 
     # ── private helpers ────────────────────────────────────────────────────
 

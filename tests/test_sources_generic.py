@@ -371,6 +371,90 @@ class TestExtractPdfLinksAdvanced:
         assert len(links) == 0
 
 
+# ── IR URL validation ─────────────────────────────────────────────────────
+
+
+class TestValidateIrUrl:
+    """Tests for _validate_ir_url — detect dead/broken IR URLs before crawling."""
+
+    @staticmethod
+    def _mock_session_get(mocker, status: int, body: str):
+        """Build a mock aiohttp session.get() that supports async with."""
+        mock_resp = mocker.MagicMock()
+        mock_resp.status = status
+        mock_resp.text = mocker.AsyncMock(return_value=body)
+        mock_resp.__aenter__ = mocker.AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = mocker.AsyncMock(return_value=None)
+
+        mock_session = mocker.MagicMock()
+        mock_session.get.return_value = mock_resp
+        return mock_session
+
+    @pytest.mark.asyncio
+    async def test_http_200_with_html_is_valid(self, mocker):
+        """A page returning 200 with real HTML content is valid."""
+        from noobanks.sources.generic import GenericIrAdapter
+
+        adapter = GenericIrAdapter()
+        mock_session = self._mock_session_get(
+            mocker, 200,
+            "<html><body><a href='/reports/'>Annual Reports</a></body></html>",
+        )
+        result = await adapter._validate_ir_url(mock_session, "https://bank.example.com/ir")
+        assert result["valid"] is True
+
+    @pytest.mark.asyncio
+    async def test_http_404_is_invalid(self, mocker):
+        """HTTP 404 should be reported as invalid with a clear message."""
+        from noobanks.sources.generic import GenericIrAdapter
+
+        adapter = GenericIrAdapter()
+        mock_session = self._mock_session_get(mocker, 404, "<html><body>Not Found</body></html>")
+        result = await adapter._validate_ir_url(mock_session, "https://bank.example.com/dead")
+        assert result["valid"] is False
+        assert "404" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_http_200_js_shell_is_invalid(self, mocker):
+        """A page returning 200 but only a JS redirect shell (<500 bytes, no links)
+        should be flagged as likely JS-rendered."""
+        from noobanks.sources.generic import GenericIrAdapter
+
+        adapter = GenericIrAdapter()
+        mock_session = self._mock_session_get(
+            mocker, 200,
+            '<html><body><script>window.location="/"</script></body></html>',
+        )
+        result = await adapter._validate_ir_url(mock_session, "https://www.icbc.com.cn/ir")
+        assert result["valid"] is False
+        assert "js" in result["error"].lower() or "shell" in result["error"].lower()
+
+    @pytest.mark.asyncio
+    async def test_http_500_is_invalid(self, mocker):
+        """Server errors should be invalid."""
+        from noobanks.sources.generic import GenericIrAdapter
+
+        adapter = GenericIrAdapter()
+        mock_session = self._mock_session_get(mocker, 500, "Internal Server Error")
+        result = await adapter._validate_ir_url(mock_session, "https://bank.example.com/broken")
+        assert result["valid"] is False
+        assert "500" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_network_error_is_invalid(self, mocker):
+        """Network/connection errors should be caught and reported."""
+        from noobanks.sources.generic import GenericIrAdapter
+        from aiohttp import ClientConnectionError
+
+        adapter = GenericIrAdapter()
+        mock_session = mocker.MagicMock()
+        mock_session.get.side_effect = ClientConnectionError("Connection refused")
+
+        result = await adapter._validate_ir_url(mock_session, "https://nonexistent.example.com")
+        assert result["valid"] is False
+        assert "connection" in result["error"].lower()
+
+
 # ── Constructor ────────────────────────────────────────────────────────────
 
 
