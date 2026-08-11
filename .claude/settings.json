@@ -11,8 +11,15 @@
       "Bash(file *)",
       "Bash(head *)",
       "Bash(grep *)",
-      "Bash(git (add*|commit*|ls-remote*|log*|status*))",
-      "Bash(uv (sync*|run*))"
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git status *)",
+      "Bash(git show *)",
+      "Bash(uv add *)",
+      "Bash(uv sync *)",
+      "Bash(uv run *)"
     ],
     "additionalDirectories": [
       "/tmp"

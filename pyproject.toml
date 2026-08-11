@@ -23,9 +23,11 @@ noobanks = "noobanks:main"
 
 [dependency-groups]
 dev = [
+    "ipykernel>=7.3.0",
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "pytest-cov>=6.0",
+    "pytest-mock>=3.15.1",
 ]
 
 [tool.uv]

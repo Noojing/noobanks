@@ -336,10 +336,28 @@ class GenericIrAdapter(SourceAdapter):
         year_str: str,
         year_short: str,
     ) -> list[str]:
-        """Parse HTML and extract PDF hrefs matching the report type + year."""
+        """Parse HTML and extract PDF hrefs matching the report type + year.
+
+        Matching is done against three signals (any one is sufficient):
+        1. href contains year + report-type keywords
+        2. <a> tag text (link text) contains year + report-type keywords
+        3. URL path segment contains the target year or publication year (year+1)
+           — needed for ABC where filenames are opaque (P02026042…pdf) but
+           paths encode the publication date (/202603/ for FY2025).
+        """
         patterns = REPORT_PATTERNS.get(report_type, [report_type.lower()])
         soup = BeautifulSoup(html, "lxml")
         links: list[str] = []
+        year_next = str(int(year_str) + 1)
+
+        def _year_in_path(href: str) -> bool:
+            """Check if year or year+1 appears in URL path segments."""
+            return f"/{year_str}" in href or f"/{year_next}" in href
+
+        def _year_in_text(text: str) -> bool:
+            """Check if year (full or short) appears in text."""
+            t = text.lower()
+            return year_str in t or year_short in t
 
         for a_tag in soup.find_all("a", href=True):
             href = a_tag["href"].strip()
@@ -352,20 +370,29 @@ class GenericIrAdapter(SourceAdapter):
             # Must match one of the report-type patterns
             type_match = any(p in href_lower for p in patterns)
 
-            # Must reference the target year
-            year_match = year_str in href or year_short in href
+            # Must reference the target year (href, path, or link text)
+            year_in_href = year_str in href or year_short in href
+            year_in_path = _year_in_path(href)
+            year_in_text = _year_in_text(a_tag.get_text(strip=True))
 
-            if type_match or year_match:
+            if year_in_href or year_in_path or year_in_text:
                 full_url = urljoin(base_url, href)
                 if full_url not in links:
                     links.append(full_url)
 
-        # If no year+type matches, relax: any PDF with year
+        # Relaxed fallback: any PDF with year (via href, path, or text)
         if not links:
             for a_tag in soup.find_all("a", href=True):
                 href = a_tag["href"].strip()
                 href_lower = href.lower()
-                if href_lower.endswith(".pdf") and (year_str in href or year_short in href):
+                if not href_lower.endswith(".pdf"):
+                    continue
+                if (
+                    year_str in href
+                    or year_short in href
+                    or _year_in_path(href)
+                    or _year_in_text(a_tag.get_text(strip=True))
+                ):
                     full_url = urljoin(base_url, href)
                     if full_url not in links:
                         links.append(full_url)

@@ -285,6 +285,92 @@ class TestFetchNoUrls:
         assert len(result.errors) >= 1
 
 
+# ── Advanced PDF link extraction (link text + path segment matching) ────────
+
+
+class TestExtractPdfLinksAdvanced:
+    """Tests for link-text and path-segment year detection.
+
+    Covers two Chinese-bank patterns:
+    - ICBC: year/type info only in <a> tag text, not in href
+    - ABC:  year info only in path segments (/202603/), not in filename
+    """
+
+    def test_matches_year_in_link_text(self):
+        """Link text like '2025 Annual Report' should match even if href has no year."""
+        adapter = GenericIrAdapter()
+        html = '<a href="/downloads/report.pdf">2025 Annual Report</a>'
+        links = adapter._extract_pdf_links(
+            html, "https://bank.example.com", "annual_report", "2025", "25"
+        )
+        assert len(links) == 1
+        assert links[0] == "https://bank.example.com/downloads/report.pdf"
+
+    def test_matches_short_year_in_link_text(self):
+        """Short year '25' in link text should match for year=2025."""
+        adapter = GenericIrAdapter()
+        html = '<a href="/downloads/report.pdf">FY25 Annual Results</a>'
+        links = adapter._extract_pdf_links(
+            html, "https://bank.example.com", "annual_report", "2025", "25"
+        )
+        assert len(links) == 1
+
+    def test_matches_year_in_path_segment_abc_pattern(self):
+        """ABC pattern: /202603/P02026042...pdf matches FY2025 via publication year."""
+        adapter = GenericIrAdapter()
+        html = '<a href="./202603/P020260423652699711023.pdf">(Online Reading)</a>'
+        links = adapter._extract_pdf_links(
+            html, "https://bank.example.com/ir/", "annual_report", "2025", "25"
+        )
+        assert len(links) == 1
+        assert "202603" in links[0]
+
+    def test_matches_fy_year_in_path_segment(self):
+        """Path with FY year directly: /2025/report.pdf should match."""
+        adapter = GenericIrAdapter()
+        html = '<a href="/reports/2025/annual-report.pdf">Report</a>'
+        links = adapter._extract_pdf_links(
+            html, "https://bank.example.com", "annual_report", "2025", "25"
+        )
+        assert len(links) == 1
+
+    def test_link_text_with_chinese_characters(self):
+        """Chinese link text like '2025年度报告' should match year + type."""
+        adapter = GenericIrAdapter()
+        html = '<a href="/downloads/report.pdf">2025年度报告（A股）</a>'
+        links = adapter._extract_pdf_links(
+            html, "https://bank.example.com", "annual_report", "2025", "25"
+        )
+        assert len(links) == 1
+
+    def test_text_match_in_relaxed_fallback(self):
+        """Relaxed fallback should also check link text when href has no year."""
+        adapter = GenericIrAdapter()
+        html = '<a href="/downloads/document.pdf">Document FY2025</a>'
+        links = adapter._extract_pdf_links(
+            html, "https://bank.example.com", "annual_report", "2025", "25"
+        )
+        assert len(links) == 1
+
+    def test_no_false_match_on_wrong_year_in_text(self):
+        """Link text with wrong year should not match."""
+        adapter = GenericIrAdapter()
+        html = '<a href="/downloads/report.pdf">2024 Annual Report</a>'
+        links = adapter._extract_pdf_links(
+            html, "https://bank.example.com", "annual_report", "2025", "25"
+        )
+        assert len(links) == 0
+
+    def test_ignores_non_pdf_even_with_year_in_text(self):
+        """Link text with year but href is .html — should be ignored."""
+        adapter = GenericIrAdapter()
+        html = '<a href="/column/12287143.html">2025年</a>'
+        links = adapter._extract_pdf_links(
+            html, "https://bank.example.com", "annual_report", "2025", "25"
+        )
+        assert len(links) == 0
+
+
 # ── Constructor ────────────────────────────────────────────────────────────
 
 
