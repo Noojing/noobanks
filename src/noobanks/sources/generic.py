@@ -43,6 +43,18 @@ REPORT_PATTERNS: dict[str, list[str]] = {
     "pillar3": ["pillar.3", "pillar-3", "pillar3", "pillar_3"],
 }
 
+# Human-readable labels for search-fallback DuckDuckGo queries.
+# Maps report_type keys to phrases used in web search queries.
+REPORT_TYPE_LABELS: dict[str, str] = {
+    "annual_report": "annual report",
+    "10-K": "10-K annual report",
+    "10-Q": "10-Q quarterly report",
+    "8-K": "8-K current report",
+    "interim_report": "interim report",
+    "quarterly_report": "quarterly report",
+    "pillar3": "pillar 3 disclosures",
+}
+
 # Keywords for detecting report-related navigation links in HTML.
 # Matched against <a> tag text OR href. Links matching these keywords
 # are followed during recursive crawling to find report download pages.
@@ -138,7 +150,9 @@ class GenericIrAdapter(SourceAdapter):
             )
             return result
 
+        tried: set[str] = set()
         for url in urls:
+            tried.add(url)
             verified = await self.verify_url(url)
             if verified is None:
                 continue
@@ -150,6 +164,23 @@ class GenericIrAdapter(SourceAdapter):
             except Exception as exc:
                 logger.warning("Download failed for %s: %s", url, exc)
                 result.errors.append(f"{url}: {exc}")
+
+        # All primary URLs failed — try search fallback as last resort
+        year_str = str(year)
+        search_urls = await self._search_fallback(bank, report_type, year_str)
+        for url in search_urls:
+            if url in tried:
+                continue
+            verified = await self.verify_url(url)
+            if verified is None:
+                continue
+            try:
+                report = await self._download(url, target, bank, report_type, year, period)
+                result.reports.append(report)
+                logger.info("Search fallback succeeded: %s", url)
+                return result
+            except Exception as exc:
+                logger.warning("Search fallback download failed for %s: %s", url, exc)
 
         if not result.reports:
             result.errors.append(
@@ -194,12 +225,27 @@ class GenericIrAdapter(SourceAdapter):
         )
 
         if not candidates_list:
-            # 4. Fallback: try constructed URLs from per-market patterns
+            # 4. Fallback: try constructed URLs from common patterns
             logger.info(
                 "Crawl found no PDFs for %s %s %s; trying URL construction",
                 bank.ticker, report_type, year,
             )
             candidates_list = self._construct_candidates(bank, year_str, year_short)
+
+        if not candidates_list:
+            # 5. Last resort: DuckDuckGo web search fallback
+            logger.info(
+                "Crawl and construction both failed for %s %s %s; trying web search",
+                bank.ticker, report_type, year,
+            )
+            search_results = await self._search_fallback(
+                bank, report_type, year_str
+            )
+            candidates_list = sorted(
+                search_results,
+                key=lambda u: self._url_score(u, year_str),
+                reverse=True,
+            )
 
         logger.info(
             "Discovered %d candidate URLs for %s %s %s",
@@ -594,6 +640,88 @@ class GenericIrAdapter(SourceAdapter):
         ]:
             candidates.append(f"{ir_base}{suffix}")
 
+        return candidates
+
+    def _run_ddg_search(self, query: str, max_results: int) -> list[dict]:
+        """Synchronous DDGS search callable via asyncio.to_thread."""
+        from ddgs import DDGS
+
+        with DDGS() as ddgs:
+            return list(ddgs.text(query, max_results=max_results))
+
+    async def _search_fallback(
+        self,
+        bank: BankSpec,
+        report_type: str,
+        year_str: str,
+        max_results: int = 10,
+    ) -> list[str]:
+        """Use DuckDuckGo search to find report PDF URLs as a last-resort fallback.
+
+        Triggered when both the IR crawl and constructed URL candidates fail.
+        Searches for: "<Bank Name> <Year> <report type label> financial report PDF"
+
+        Strategy:
+        1. Run a DDG text search with the bank name + year + report type
+        2. Collect URLs from search results that end in .pdf (direct PDF links)
+        3. For non-PDF result pages, scrape them for embedded PDF links
+        4. Deduplicate and return all candidate PDF URLs
+
+        Args:
+            bank: Bank specification from config.
+            report_type: Type key (annual_report, 10-K, etc.).
+            year_str: 4-digit year as string ("2025").
+            max_results: Max DDG search results to examine.
+
+        Returns:
+            List of candidate PDF URLs discovered via search.
+        """
+        label = REPORT_TYPE_LABELS.get(report_type, report_type.replace("_", " "))
+        query = f"{bank.name} {year_str} {label} financial report PDF"
+
+        logger.info("Search fallback: query=%s", query)
+
+        # Run synchronous DDGS search in a thread to avoid blocking
+        try:
+            results = await asyncio.to_thread(
+                self._run_ddg_search, query, max_results
+            )
+        except Exception as exc:
+            logger.warning("Search fallback failed: %s", exc)
+            return []
+
+        candidates: list[str] = []
+
+        async with self._get_session() as session:
+            for result in results:
+                href = result.get("href", "")
+                if not href:
+                    continue
+
+                # Direct PDF links from search results — verify before including
+                if href.lower().endswith(".pdf"):
+                    verified = await self.verify_url(href)
+                    if verified is not None:
+                        if href not in candidates:
+                            candidates.append(href)
+                    continue
+
+                # Non-PDF result pages: scrape for embedded PDF links
+                year_short = str(int(year_str) % 100)
+                try:
+                    page_pdfs = await self._scrape_page_for_pdfs(
+                        session, href, report_type, year_str, year_short
+                    )
+                    for pdf_url in page_pdfs:
+                        if pdf_url not in candidates:
+                            candidates.append(pdf_url)
+                except Exception:
+                    continue
+
+        logger.info(
+            "Search fallback found %d candidates for %s %s %s",
+            len(candidates), bank.ticker, report_type, year_str,
+        )
         return candidates
 
     def _url_score(self, url: str, year_str: str) -> int:

@@ -10,6 +10,7 @@ requires-python = ">=3.14"
 dependencies = [
     "aiohttp>=3.10",
     "beautifulsoup4>=4.12",
+    "ddgs>=9.14.4",
     "lxml>=5.3",
     "pydantic>=2.10",
     "pyyaml>=6.0",

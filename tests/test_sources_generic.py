@@ -16,6 +16,7 @@ from noobanks.sources.base import Report
 from noobanks.sources.generic import (
     NAV_KEYWORDS,
     REPORT_PATTERNS,
+    REPORT_TYPE_LABELS,
     GenericIrAdapter,
 )
 
@@ -260,13 +261,16 @@ class TestFetchCached:
         assert result.reports[0].url == "(cached)"
 
     @pytest.mark.asyncio
-    async def test_force_re_downloads(self, tmp_data_dir: Path):
+    async def test_force_re_downloads(self, tmp_data_dir: Path, mocker):
         # Use a bank with a non-existent IR URL to force discovery failure
         bank = _make_bank(ticker="BOGUS.XX", market="UK")
         adapter = GenericIrAdapter(data_dir=tmp_data_dir)
         target = adapter.target_path(tmp_data_dir, 2025, "BOGUS_XX", "annual_report", "FY")
         target.parent.mkdir(parents=True)
         target.write_bytes(b"%PDF-1.4\nold\n%%EOF")
+
+        # Disable search fallback for this test (bank URL is intentionally bogus)
+        mocker.patch.object(adapter, "_search_fallback", return_value=[])
 
         # With force=True and a bogus URL, discovery will fail → errors
         result = await adapter.fetch(bank, "annual_report", 2025, force=True)
@@ -277,12 +281,14 @@ class TestFetchCached:
 class TestFetchNoUrls:
     @pytest.mark.asyncio
     async def test_returns_error_when_no_urls_discovered(
-        self, tmp_data_dir: Path, sample_bank_spec: BankSpec
+        self, tmp_data_dir: Path, sample_bank_spec: BankSpec, mocker
     ):
         adapter = GenericIrAdapter(data_dir=tmp_data_dir)
         # The bank's IR URL doesn't exist → discovery will fail
         # We can make this deterministic by using a bank with a clearly bogus URL
         bank = _make_bank(ticker="BOGUS.TK", market="UK")
+        # Disable search fallback for this test (bank URL is intentionally bogus)
+        mocker.patch.object(adapter, "_search_fallback", return_value=[])
         result = await adapter.fetch(bank, "annual_report", 2025)
         assert result.succeeded == 0
         assert len(result.errors) >= 1
@@ -538,6 +544,143 @@ class TestExtractNavLinks:
             html, "https://bank.example.com/investors/"
         )
         assert links[0] == "https://bank.example.com/investors/annual-reports/"
+
+
+# ── DuckDuckGo search fallback ────────────────────────────────────────────
+
+
+class TestSearchFallback:
+    """Tests for _search_fallback — ddgs-powered URL discovery fallback."""
+
+    def test_builds_search_query_from_bank_and_type(self):
+        """Query should combine bank name, year, and report type label."""
+        from noobanks.config.models import BankSpec, SourceConfig
+
+        bank = BankSpec(
+            name="ICBC",
+            ticker="601398.SH",
+            exchange="SSE",
+            market="CN",
+            sources=SourceConfig(investor_relations="https://example.com/ir"),
+            filings=["annual_report"],
+        )
+        label = REPORT_TYPE_LABELS.get("annual_report", "annual report")
+        query = f"{bank.name} 2025 {label} financial report PDF"
+        assert "ICBC" in query
+        assert "2025" in query
+        assert "annual report" in query
+        assert "PDF" in query
+
+    @pytest.mark.asyncio
+    async def test_search_fallback_returns_pdf_urls(self, mocker):
+        """When DDGS returns results with PDF hrefs, they should be collected."""
+        from noobanks.config.models import BankSpec, SourceConfig
+
+        bank = BankSpec(
+            name="Test Bank",
+            ticker="TEST.L",
+            exchange="LSE",
+            market="UK",
+            sources=SourceConfig(investor_relations="https://test.example.com/ir"),
+            filings=["annual_report"],
+        )
+        adapter = GenericIrAdapter()
+
+        # Mock _run_ddg_search to return synthetic results
+        mocker.patch.object(
+            adapter, "_run_ddg_search",
+            return_value=[
+                {"title": "Annual Report 2025", "href": "https://cdn.example.com/2025-annual-report.pdf", "body": "..."},
+                {"title": "Test Bank IR", "href": "https://test.example.com/ir/reports", "body": "..."},
+            ],
+        )
+        # Mock verify_url to accept the PDF URL
+        mocker.patch.object(
+            adapter, "verify_url",
+            return_value={"status": 200, "content_type": "application/pdf", "content_length": 500000},
+        )
+
+        urls = await adapter._search_fallback(bank, "annual_report", "2025")
+        assert len(urls) >= 1
+        assert any("2025-annual-report.pdf" in u for u in urls)
+
+    @pytest.mark.asyncio
+    async def test_search_fallback_returns_empty_on_no_results(self, mocker):
+        """Empty search results should return an empty list."""
+        from noobanks.config.models import BankSpec, SourceConfig
+
+        bank = BankSpec(
+            name="NoResults Bank",
+            ticker="NOPE.L",
+            exchange="LSE",
+            market="UK",
+            sources=SourceConfig(investor_relations="https://nope.example.com/ir"),
+            filings=["annual_report"],
+        )
+        adapter = GenericIrAdapter()
+
+        mocker.patch.object(adapter, "_run_ddg_search", return_value=[])
+
+        urls = await adapter._search_fallback(bank, "annual_report", "2025")
+        assert urls == []
+
+    @pytest.mark.asyncio
+    async def test_discover_urls_calls_fallback_when_crawl_fails(self, mocker):
+        """When crawl and construction both return empty, invoke search fallback."""
+        from noobanks.config.models import BankSpec, SourceConfig
+
+        bank = BankSpec(
+            name="ICBC",
+            ticker="601398.SH",
+            exchange="SSE",
+            market="CN",
+            sources=SourceConfig(investor_relations="https://www.icbc-ltd.com/en/page/1220.html"),
+            filings=["annual_report"],
+        )
+        adapter = GenericIrAdapter()
+
+        mocker.patch.object(adapter, "_crawl_for_report_pages", return_value=[])
+        mocker.patch.object(adapter, "_construct_candidates", return_value=[])
+        mocker.patch.object(
+            adapter, "_search_fallback",
+            return_value=["https://cdn.example.com/report-2025.pdf"],
+        )
+        mocker.patch.object(adapter, "_validate_ir_url", return_value={"valid": True})
+
+        urls = await adapter.discover_urls(bank, "annual_report", 2025)
+        assert len(urls) == 1
+        assert "report-2025.pdf" in urls[0]
+
+    @pytest.mark.asyncio
+    async def test_discover_urls_skips_fallback_when_crawl_succeeds(self, mocker):
+        """When crawl finds URLs, skip the search fallback entirely."""
+        from noobanks.config.models import BankSpec, SourceConfig
+
+        bank = BankSpec(
+            name="Barclays",
+            ticker="BARC.L",
+            exchange="LSE",
+            market="UK",
+            sources=SourceConfig(investor_relations="https://home.barclays/investor-relations"),
+            filings=["annual_report"],
+        )
+        adapter = GenericIrAdapter()
+
+        mocker.patch.object(
+            adapter, "_crawl_for_report_pages",
+            return_value=["https://home.barclays/reports/2025-annual-report.pdf"],
+        )
+        mocker.patch.object(adapter, "_validate_ir_url", return_value={"valid": True})
+        fallback_spy = mocker.patch.object(adapter, "_search_fallback", return_value=[])
+
+        urls = await adapter.discover_urls(bank, "annual_report", 2025)
+        assert len(urls) >= 1
+        fallback_spy.assert_not_called()
+
+    def test_report_type_labels_coverage(self):
+        """All report types with patterns should have a search label."""
+        for rt in REPORT_PATTERNS:
+            assert rt in REPORT_TYPE_LABELS, f"Missing label for {rt}"
 
 
 # ── Constructor ────────────────────────────────────────────────────────────

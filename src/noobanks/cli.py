@@ -22,6 +22,28 @@ app = typer.Typer(
 console = Console()
 store = ReportStore()
 
+# Log-level lookup: -v count → level
+_LEVELS = [logging.WARNING, logging.INFO, logging.DEBUG]
+
+
+@app.callback()
+def _global(
+    verbose: int = typer.Option(
+        0, "--verbose", "-v",
+        count=True,
+        help="Increase log verbosity: -v for INFO, -vv for DEBUG",
+        show_default=False,
+    ),
+) -> None:
+    """Global options applied before any subcommand runs."""
+    level = _LEVELS[min(verbose, len(_LEVELS) - 1)]
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        force=True,  # re-configure even if already called
+    )
+
+
 # Subcommand groups
 fetch_app = typer.Typer(help="Download financial reports from bank IR pages.")
 list_app = typer.Typer(help="List configured banks or downloaded reports.")
@@ -188,8 +210,4 @@ def list_reports(
 
 def main() -> None:
     """Entry point for the noobanks CLI."""
-    logging.basicConfig(
-        level=logging.WARNING,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
     app()
