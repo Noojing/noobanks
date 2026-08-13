@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from noobanks.storage.store import ReportStore
+from noobanks.storage.store import DEFAULT_DATA_DIR, ReportStore
 
 
 class TestReportStorePaths:
@@ -30,7 +30,11 @@ class TestReportStorePaths:
 
     def test_default_base_dir(self):
         store = ReportStore()
-        assert store.base_dir == Path("src/data")
+        assert store.base_dir == DEFAULT_DATA_DIR
+
+    def test_default_data_dir_is_home_based(self):
+        """DEFAULT_DATA_DIR should be ~/.noobanks/data, platform-agnostic."""
+        assert DEFAULT_DATA_DIR == Path.home() / ".noobanks" / "data"
 
 
 class TestReportStoreExists:

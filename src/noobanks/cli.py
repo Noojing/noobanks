@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 from typing import Optional
 
 import typer
@@ -13,6 +14,7 @@ from rich.table import Table
 from noobanks.config.loader import load_bank_registry
 from noobanks.sources.generic import GenericIrAdapter
 from noobanks.storage import ReportStore
+from noobanks.storage.store import DEFAULT_DATA_DIR
 
 app = typer.Typer(
     name="noobanks",
@@ -20,7 +22,6 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 console = Console()
-store = ReportStore()
 
 # Log-level lookup: -v count → level
 _LEVELS = [logging.WARNING, logging.INFO, logging.DEBUG]
@@ -76,6 +77,10 @@ def fetch_bank(
     year: int = typer.Option(2025, "--year", "-y", help="Fiscal year of the report"),
     period: str = typer.Option("FY", "--period", "-p", help="Period: FY, Q1-Q4, H1, H2"),
     force: bool = typer.Option(False, "--force", "-f", help="Re-download even if exists"),
+    data_dir: Path = typer.Option(
+        DEFAULT_DATA_DIR, "--data-dir", "-d",
+        help="Base data directory (default: ~/.noobanks/data)",
+    ),
 ) -> None:
     """Download a financial report for a specific bank."""
     registry = load_bank_registry()
@@ -88,7 +93,8 @@ def fetch_bank(
     console.print(f"Fetching [bold]{bank.name}[/bold] ({bank.ticker}): "
                   f"{_period_label(report_type, period)} {year}")
 
-    adapter = GenericIrAdapter()
+    ReportStore(data_dir).ensure_dirs()
+    adapter = GenericIrAdapter(data_dir=data_dir)
     result = _run_async(adapter.fetch(bank, report_type, year, period, force=force))
 
     if result.reports:
@@ -115,6 +121,10 @@ def fetch_all(
         None, "--market", "-m", help="Filter by market: US, CN, HK, UK"
     ),
     force: bool = typer.Option(False, "--force", "-f", help="Re-download existing"),
+    data_dir: Path = typer.Option(
+        DEFAULT_DATA_DIR, "--data-dir", "-d",
+        help="Base data directory (default: ~/.noobanks/data)",
+    ),
 ) -> None:
     """Download reports for all configured banks."""
     registry = load_bank_registry()
@@ -122,7 +132,8 @@ def fetch_all(
 
     console.print(f"Fetching [bold]{_period_label(report_type, period)} {year}[/bold] "
                   f"for {len(banks)} banks...")
-    adapter = GenericIrAdapter()
+    ReportStore(data_dir).ensure_dirs()
+    adapter = GenericIrAdapter(data_dir=data_dir)
 
     async def _fetch_all():
         succeeded, failed, skipped = [], [], []
@@ -179,8 +190,13 @@ def list_banks(
 @list_app.command(name="reports")
 def list_reports(
     year: Optional[int] = typer.Option(None, "--year", "-y", help="Filter by year"),
+    data_dir: Path = typer.Option(
+        DEFAULT_DATA_DIR, "--data-dir", "-d",
+        help="Base data directory (default: ~/.noobanks/data)",
+    ),
 ) -> None:
     """List downloaded raw reports."""
+    store = ReportStore(data_dir)
     if year:
         paths = store.list_raw_reports_for_year(year)
     else:

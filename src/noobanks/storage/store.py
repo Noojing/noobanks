@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+# Default data directory: ~/.noobanks/data — platform-agnostic via Path.home()
+DEFAULT_DATA_DIR: Path = Path.home() / ".noobanks" / "data"
+
 
 class ReportStore:
     """Manages file paths and I/O for raw, processed, and output data.
@@ -15,7 +18,7 @@ class ReportStore:
         └── output/{bank_ticker}/{period}/metrics.json
     """
 
-    def __init__(self, base_dir: str | Path = "src/data"):
+    def __init__(self, base_dir: str | Path = DEFAULT_DATA_DIR):
         self.base_dir = Path(base_dir)
         self.raw_dir = self.base_dir / "raw"
         self.processed_dir = self.base_dir / "processed"

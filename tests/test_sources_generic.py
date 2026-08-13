@@ -688,8 +688,10 @@ class TestSearchFallback:
 
 class TestGenericIrAdapterInit:
     def test_default_values(self):
+        from noobanks.storage.store import DEFAULT_DATA_DIR
+
         adapter = GenericIrAdapter()
-        assert adapter.data_dir == Path("src/data")
+        assert adapter.data_dir == DEFAULT_DATA_DIR
         assert adapter.timeout == 30
         assert adapter.rate_limit_delay == 3.0
 

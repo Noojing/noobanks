@@ -20,6 +20,7 @@ from tenacity import (
 
 from noobanks.config.models import BankSpec
 from noobanks.sources.base import FetchResult, Report, SourceAdapter
+from noobanks.storage.store import DEFAULT_DATA_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +94,7 @@ class GenericIrAdapter(SourceAdapter):
 
     def __init__(
         self,
-        data_dir: str | Path = "src/data",
+        data_dir: str | Path = DEFAULT_DATA_DIR,
         *,
         timeout: int = 30,
         user_agent: str = (
