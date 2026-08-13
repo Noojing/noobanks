@@ -324,7 +324,7 @@ class GenericIrAdapter(SourceAdapter):
                         "error": f"IR URL returned HTTP {resp.status}: {url}",
                     }
 
-                html = await resp.text()
+                html = await resp.text(errors="replace")
                 html_size = len(html)
 
                 soup = BeautifulSoup(html, "lxml")
@@ -385,7 +385,7 @@ class GenericIrAdapter(SourceAdapter):
             async with session.get(base_url, allow_redirects=True, max_redirects=3) as resp:
                 if resp.status != 200:
                     return []
-                html = await resp.text()
+                html = await resp.text(errors="replace")
         except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
             logger.debug("Failed to fetch %s: %s", base_url, exc)
             return []
@@ -576,7 +576,7 @@ class GenericIrAdapter(SourceAdapter):
                     if resp.status != 200:
                         logger.debug("Crawl skip %s → HTTP %d", url, resp.status)
                         continue
-                    html = await resp.text()
+                    html = await resp.text(errors="replace")
             except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
                 logger.debug("Crawl skip %s → %s", url, exc)
                 continue

@@ -136,7 +136,7 @@ def fetch_all(
     adapter = GenericIrAdapter(data_dir=data_dir)
 
     async def _fetch_all():
-        succeeded, failed, skipped = [], [], []
+        succeeded, failed = [], []
         for i, bank in enumerate(banks):
             console.print(f"  [{i+1}/{len(banks)}] {bank.ticker} ({bank.name})...")
             result = await adapter.fetch(bank, report_type, year, period, force=force)
@@ -152,7 +152,7 @@ def fetch_all(
                 await asyncio.sleep(2)  # inter-bank cooldown
         return succeeded, failed
 
-    succeeded, failed, _ = _run_async(_fetch_all())
+    succeeded, failed = _run_async(_fetch_all())
     console.print(f"\n[bold]Summary:[/bold] {len(succeeded)} succeeded, {len(failed)} failed")
 
 
