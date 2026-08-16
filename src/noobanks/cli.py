@@ -286,7 +286,7 @@ extract_app = typer.Typer(help="Extract financial metrics from downloaded report
 app.add_typer(extract_app, name="extract")
 
 
-def _extract_one(
+async def _extract_one(
     store: ReportStore,
     bank: BankSpec,
     year: int,
@@ -314,10 +314,7 @@ def _extract_one(
     markdown = md_path.read_text(encoding="utf-8")
     pages = markdown_to_pages(markdown)
 
-    async def _run():
-        return await aggregator.extract_all(specs, pages, year)
-
-    results = _run_async(_run())
+    results = await aggregator.extract_all(specs, pages, year)
 
     records = aggregator.records_for_bank(bank.ticker_safe, bank.name, year, results)
     aggregator.append_jsonl(
@@ -365,9 +362,9 @@ def extract_bank(
         console.print(f"[red]Bank not found:[/red] {ticker}")
         raise typer.Exit(1)
 
-    ok, message = _extract_one(
+    ok, message = _run_async(_extract_one(
         ReportStore(data_dir), bank, year, force, show_metrics=True
-    )
+    ))
     if not ok:
         console.print(f"[red]✗[/red] {bank.ticker}: {message}")
         raise typer.Exit(1)
@@ -405,7 +402,7 @@ def extract_all(
 
     async def _extract_all():
         for i, bank in enumerate(banks):
-            ok, message = _extract_one(store, bank, year, force)
+            ok, message = await _extract_one(store, bank, year, force)
             if not ok:
                 failed.append(bank.ticker)
                 console.print(f"  [red]✗[/red] {bank.ticker}: {message}")
