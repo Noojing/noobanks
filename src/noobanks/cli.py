@@ -11,7 +11,10 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from noobanks.config.loader import load_bank_registry
+from noobanks.config.loader import load_bank_registry, load_metric_specs
+from noobanks.extraction.aggregator import ResultAggregator
+from noobanks.extraction.extractor import MetricExtractor
+from noobanks.processing.parser import markdown_to_pages, parse_to_markdown
 from noobanks.sources.generic import GenericIrAdapter
 from noobanks.storage import ReportStore
 from noobanks.storage.store import DEFAULT_DATA_DIR
@@ -154,6 +157,114 @@ def fetch_all(
 
     succeeded, failed = _run_async(_fetch_all())
     console.print(f"\n[bold]Summary:[/bold] {len(succeeded)} succeeded, {len(failed)} failed")
+
+
+# ── parse ──────────────────────────────────────────────────────────────────
+
+parse_app = typer.Typer(help="Convert raw PDFs into processed markdown.")
+app.add_typer(parse_app, name="parse")
+
+
+@parse_app.command(name="bank")
+def parse_bank(
+    ticker: str = typer.Argument(..., help="Bank ticker (e.g. BARC.L, 601398.SH)"),
+    year: int = typer.Option(2025, "--year", "-y", help="Fiscal year"),
+    data_dir: Path = typer.Option(
+        DEFAULT_DATA_DIR, "--data-dir", "-d",
+        help="Base data directory (default: ~/.noobanks/data)",
+    ),
+) -> None:
+    """Convert a downloaded annual-report PDF into processed markdown."""
+    registry = load_bank_registry()
+    bank = registry.find(ticker)
+    if bank is None:
+        console.print(f"[red]Bank not found:[/red] {ticker}")
+        raise typer.Exit(1)
+
+    store = ReportStore(data_dir)
+    pdf_path = store.raw_path(year, bank.ticker_safe, "annual_report", "FY")
+    if not pdf_path.exists():
+        console.print(f"[red]Report not downloaded:[/red] {pdf_path}")
+        console.print(f"Run `noobanks fetch bank {ticker} --year {year}` first.")
+        raise typer.Exit(1)
+
+    console.print(f"Parsing [bold]{bank.name}[/bold] FY{year} PDF → markdown...")
+    markdown = parse_to_markdown(pdf_path)
+    md_path = store.processed_path(year, bank.ticker_safe, "annual_report", "FY")
+    md_path.parent.mkdir(parents=True, exist_ok=True)
+    md_path.write_text(markdown, encoding="utf-8")
+    console.print(f"  ✓ {md_path} ({len(markdown):,} chars)")
+
+
+# ── extract ────────────────────────────────────────────────────────────────
+
+extract_app = typer.Typer(help="Extract financial metrics from downloaded reports.")
+app.add_typer(extract_app, name="extract")
+
+
+@extract_app.command(name="bank")
+def extract_bank(
+    ticker: str = typer.Argument(..., help="Bank ticker (e.g. BARC.L, 601398.SH)"),
+    year: int = typer.Option(2025, "--year", "-y", help="Fiscal year"),
+    data_dir: Path = typer.Option(
+        DEFAULT_DATA_DIR, "--data-dir", "-d",
+        help="Base data directory (default: ~/.noobanks/data)",
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f",
+        help="Re-extract even if the bank already has a record for this year",
+    ),
+) -> None:
+    """Extract metrics from processed markdown into the per-year JSONL."""
+    registry = load_bank_registry()
+    bank = registry.find(ticker)
+    if bank is None:
+        console.print(f"[red]Bank not found:[/red] {ticker}")
+        raise typer.Exit(1)
+
+    specs = load_metric_specs()
+    store = ReportStore(data_dir)
+    md_path = store.processed_path(year, bank.ticker_safe, "annual_report", "FY")
+    if not md_path.exists():
+        console.print(f"[red]Report not parsed:[/red] {md_path}")
+        console.print(f"Run `noobanks parse bank {ticker} --year {year}` first.")
+        raise typer.Exit(1)
+
+    aggregator = ResultAggregator(extractor=MetricExtractor())
+    out_path = store.output_jsonl_path(year)
+
+    # Skip unless forced: one record per bank per year.
+    if not force and aggregator.has_bank_record(out_path, bank.ticker_safe, year):
+        console.print(
+            f"[yellow]Already extracted[/yellow] {bank.ticker} FY{year} "
+            f"(use --force to re-extract)."
+        )
+        raise typer.Exit(0)
+
+    console.print(f"Extracting metrics for [bold]{bank.name}[/bold] FY{year}...")
+    markdown = md_path.read_text(encoding="utf-8")
+    pages = markdown_to_pages(markdown)
+    console.print(f"  Loaded {len(pages)} page chunks from {md_path.name}")
+
+    async def _run():
+        return await aggregator.extract_all(specs, pages, year)
+
+    results = _run_async(_run())
+
+    records = aggregator.records_for_bank(
+        bank.ticker_safe, bank.name, year, results
+    )
+    aggregator.append_jsonl(
+        records, out_path,
+        replace_bank=bank.ticker_safe, replace_year=year,
+    )
+
+    for name, r in results.items():
+        if "error" in r:
+            console.print(f"  [red]✗[/red] {name}: {r['error']}")
+        else:
+            console.print(f"  [green]✓[/green] {name}: {r['value']} {r.get('unit') or ''}")
+    console.print(f"\nWrote {len(records)} record(s) to {out_path}")
 
 
 # ── list ───────────────────────────────────────────────────────────────────

@@ -9,10 +9,13 @@ authors = [
 requires-python = ">=3.14"
 dependencies = [
     "aiohttp>=3.10",
+    "anthropic>=0.122.0",
     "beautifulsoup4>=4.12",
     "ddgs>=9.14.4",
     "lxml>=5.3",
     "pydantic>=2.10",
+    "pymupdf>=1.28.2",
+    "pymupdf4llm>=1.28.2",
     "pyyaml>=6.0",
     "rich>=13.9",
     "tenacity>=9.0",

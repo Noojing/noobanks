@@ -81,3 +81,44 @@ class BankRegistry(BaseModel):
 
     def __iter__(self):
         return iter(self.banks)
+
+
+class MetricSpec(BaseModel):
+    """A single metric extraction specification from metrics.yaml.
+
+    Fields:
+        name: Stable identifier used in output JSON keys.
+        label: Human-readable display name.
+        keywords: Bilingual keyword hints (EN + 中文) used to score
+            document pages for relevance. Must use bank-report vocabulary
+            (e.g. RoTE, NIM, TNAV per share, attributable profit) — generic
+            accounting terms often do not appear in bank reports.
+        description: What the metric means and its formula from stated
+            components — included in the LLM prompt.
+    """
+
+    name: str
+    label: str
+    keywords: list[str]
+    description: str
+
+
+class LlmConfig(BaseModel):
+    """LLM backend configuration from pipeline.yaml.
+
+    Fields:
+        provider: "claude" or "deepseek" (or any OpenAI-compatible name
+            handled by the factory).
+        model: Model id (e.g. "claude-opus-5", "deepseek-chat").
+        base_url: For OpenAI-compatible endpoints (e.g.
+            https://api.deepseek.com). None means the provider default.
+        api_key_env: Environment variable holding the API key
+            (e.g. DEEPSEEK_API_KEY). None means the provider default.
+        max_tokens: Output token cap per extraction call.
+    """
+
+    provider: str = "deepseek"
+    model: str = "deepseek-chat"
+    base_url: Optional[str] = None
+    api_key_env: Optional[str] = None
+    max_tokens: int = 2048

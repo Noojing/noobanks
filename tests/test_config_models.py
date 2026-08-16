@@ -158,3 +158,32 @@ class TestBankRegistry:
     def test_invalid_yaml_structure_raises(self):
         with pytest.raises(ValidationError):
             BankRegistry.model_validate({"banks": [{"name": "Missing ticker"}]})
+
+
+from noobanks.config.models import MetricSpec
+
+
+class TestMetricSpec:
+    def test_full_construction(self):
+        m = MetricSpec(
+            name="net_profit_margin",
+            label="Net Profit Margin",
+            keywords=["net interest margin", "attributable profit", "净利润率"],
+            description="Net income divided by revenue.",
+        )
+        assert m.name == "net_profit_margin"
+        assert len(m.keywords) == 3
+
+    def test_minimal_construction(self):
+        m = MetricSpec(
+            name="pb",
+            label="Price-to-Book",
+            keywords=["price to book", "tangible net asset value per share", "市净率"],
+            description="Market price per share / book value per share.",
+        )
+        assert m.name == "pb"
+        assert m.label == "Price-to-Book"
+
+    def test_missing_keywords_raises(self):
+        with pytest.raises(ValidationError):
+            MetricSpec(name="x", label="X", description="d")  # keywords required

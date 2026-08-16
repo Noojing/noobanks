@@ -1,0 +1,70 @@
+# Metric extraction specifications.
+# Keywords use bank-report vocabulary (validated against Barclays FY2025).
+# Descriptions name the formula from stated components — several of these
+# metrics are never stated directly in bank reports and must be computed.
+# The LLM reports the value together with its unit; absent metrics are
+# reported via an error string.
+metrics:
+  - name: net_profit_margin
+    label: Net Profit Margin
+    keywords:
+      - net interest margin
+      - attributable profit
+      - profit attributable
+      - total income
+      - cost to income ratio
+      - 净利润率
+      - 净利率
+    description: 'Net income (profit attributable to shareholders) divided by total operating income for the fiscal year, in percent. Bank reports do NOT state this directly — compute attributable profit ÷ total income using figures you can cite. Do NOT confuse with "net interest margin", which is a different metric.'
+
+  - name: asset_turnover
+    label: Asset Turnover
+    keywords:
+      - total income
+      - total assets
+      - balance sheet commentary
+      - 资产周转率
+      - 营业收入
+    description: 'Total operating income divided by total assets at year end. Bank reports do NOT state this directly — compute total income ÷ total assets using figures you can cite.'
+
+  - name: equity_multiplier
+    label: Equity Multiplier
+    keywords:
+      - total assets
+      - total equity
+      - shareholders equity
+      - balance sheet commentary
+      - 权益乘数
+      - 杠杆率
+    description: 'Total assets divided by total shareholders'' equity (including non-controlling interests). A measure of how much of assets are funded by equity vs liabilities. IMPORTANT: do NOT return the regulatory "leverage ratio" (Tier 1 capital ÷ exposure) — that is a different concept. Compute total assets ÷ total equity using figures you can cite.'
+
+  - name: roe
+    label: Return on Equity (RoTE)
+    keywords:
+      - return on tangible equity
+      - return on equity
+      - RoTE
+      - statutory return
+      - 净资产收益率
+    description: 'Return on equity for the fiscal year, in percent. Bank reports state "return on tangible equity" (RoTE) rather than plain ROE — report the RoTE figure when stated. Do not confuse with return on risk-weighted assets.'
+
+  - name: pb
+    label: Price-to-Book Ratio
+    keywords:
+      - price to book
+      - price-to-book
+      - tangible net asset value per share
+      - TNAV per share
+      - book value per share
+      - 市净率
+    description: 'Market price per share divided by book value per share (tangible net asset value per share, or TNAV) at fiscal year end. The report states the book-value component but not the market price — return an error if the ratio is not stated.'
+
+  - name: pe
+    label: Price-to-Earnings Ratio
+    keywords:
+      - price to earnings
+      - price-to-earnings
+      - earnings per share
+      - diluted earnings per share
+      - 市盈率
+    description: 'Market price per share divided by earnings per share (EPS) for the fiscal year. The report states EPS but not the market price — return an error if the ratio is not stated.'

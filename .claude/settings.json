@@ -19,7 +19,9 @@
       "Bash(git show *)",
       "Bash(uv add *)",
       "Bash(uv sync *)",
-      "Bash(uv run *)"
+      "Bash(uv run *)",
+      "Skill(claude-api)",
+      "Skill(claude-api:*)"
     ],
     "additionalDirectories": [
       "/tmp"

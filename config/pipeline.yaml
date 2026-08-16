@@ -1,0 +1,12 @@
+# Pipeline runtime configuration.
+llm:
+  # Backend used for metric extraction.
+  #   deepseek — OpenAI-compatible API (default)
+  #   claude   — Anthropic API
+  provider: deepseek
+  model: deepseek-chat
+  # OpenAI-compatible endpoint. Leave null for the DeepSeek default.
+  base_url: https://api.deepseek.com
+  # Env var holding the API key. Leave null for the provider default.
+  api_key_env: DEEPSEEK_API_KEY
+  max_tokens: 2048
