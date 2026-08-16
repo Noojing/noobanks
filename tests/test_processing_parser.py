@@ -76,3 +76,16 @@ class TestMarkdownRoundTrip:
         assert "Page one text" in md
         assert "<!-- page 2 -->" in md
         assert "Page two text" in md
+
+
+from noobanks.processing.parser import count_tokens
+
+
+class TestCountTokens:
+    def test_returns_positive_int(self):
+        n = count_tokens("Net interest margin was 3.63%.")
+        assert isinstance(n, int)
+        assert n > 0
+
+    def test_monotonic_with_length(self):
+        assert count_tokens("a" * 500) > count_tokens("a" * 5)

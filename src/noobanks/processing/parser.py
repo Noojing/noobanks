@@ -85,6 +85,18 @@ def parse_to_markdown(pdf_path: str | Path) -> str:
     return "\n\n".join(parts).strip()
 
 
+def count_tokens(text: str, encoding: str = "cl100k_base") -> int:
+    """Count tokens in text using tiktoken (BPE, cl100k_base by default).
+
+    Used to report processed-document size; an approximation for the LLM
+    backends this pipeline supports.
+    """
+    import tiktoken
+
+    enc = tiktoken.get_encoding(encoding)
+    return len(enc.encode(text))
+
+
 def markdown_to_pages(markdown: str) -> list[PageText]:
     """Split page-marked markdown back into per-page PageText chunks.
 

@@ -123,3 +123,21 @@ class TestMetricExtractor:
     def test_cap_leaves_short_text_untouched(self):
         extractor = MetricExtractor(llm=FakeLlm({}))
         assert extractor._cap("short text", 10_000) == "short text"
+
+    def test_total_usage_none_for_fake_llm(self):
+        """Fakes without usage tracking report None."""
+        extractor = MetricExtractor(llm=FakeLlm(VALUE_RESULT))
+        assert extractor.total_usage is None
+
+    def test_total_usage_from_client(self):
+        from noobanks.extraction.llm import LlmUsage
+
+        class UsageLlm(FakeLlm):
+            def __init__(self):
+                super().__init__(VALUE_RESULT)
+                self.total_usage = LlmUsage(input_tokens=10, output_tokens=2)
+
+        extractor = MetricExtractor(llm=UsageLlm())
+        usage = extractor.total_usage
+        assert usage.input_tokens == 10
+        assert usage.output_tokens == 2

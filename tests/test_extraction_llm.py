@@ -293,3 +293,87 @@ class TestSchemaInstruction:
         merged = _merge_schema_into_system("Base instructions", ONE_OF_SCHEMA)
         assert merged.startswith("Base instructions\n\n")
         assert "Respond exactly with a JSON schema as below" in merged
+
+
+from noobanks.extraction.llm import LlmUsage
+
+
+class TestUsageTracking:
+    @pytest.mark.asyncio
+    async def test_claude_accumulates_usage(self, mocker):
+        client = ClaudeLlmClient()
+
+        mock_text_block = mocker.MagicMock()
+        mock_text_block.type = "text"
+        mock_text_block.text = '{"value": 32.5, "unit": "%", "confidence": "high"}'
+
+        usage = mocker.MagicMock()
+        usage.input_tokens = 1234
+        usage.output_tokens = 56
+
+        mock_response = mocker.MagicMock()
+        mock_response.stop_reason = "end_turn"
+        mock_response.content = [mock_text_block]
+        mock_response.usage = usage
+
+        mock_client = mocker.AsyncMock()
+        mock_client.messages.create.return_value = mock_response
+        client._client = mock_client
+
+        await client.complete("s", "u", SCHEMA)
+        assert client.total_usage == LlmUsage(input_tokens=1234, output_tokens=56)
+
+    @pytest.mark.asyncio
+    async def test_deepseek_accumulates_usage(self, mocker):
+        client = DeepSeekLlmClient()
+        mocker.patch.dict("os.environ", {"DEEPSEEK_API_KEY": "test-key"})
+
+        mock_response = mocker.MagicMock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": '{"value": 11.3, "unit": "%", "confidence": "high"}'
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 999, "completion_tokens": 42},
+        }
+
+        mock_http = mocker.AsyncMock()
+        mock_http.__aenter__.return_value.post.return_value = mock_response
+        mock_http.__aexit__ = mocker.AsyncMock(return_value=None)
+
+        mocker.patch("httpx.AsyncClient", return_value=mock_http)
+
+        await client.complete("s", "u", SCHEMA)
+        assert client.total_usage == LlmUsage(input_tokens=999, output_tokens=42)
+
+    @pytest.mark.asyncio
+    async def test_deepseek_missing_usage_is_zero(self, mocker):
+        client = DeepSeekLlmClient()
+        mocker.patch.dict("os.environ", {"DEEPSEEK_API_KEY": "test-key"})
+
+        mock_response = mocker.MagicMock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": '{"value": 11.3, "unit": "%", "confidence": "high"}'
+                    },
+                    "finish_reason": "stop",
+                }
+            ]
+        }
+
+        mock_http = mocker.AsyncMock()
+        mock_http.__aenter__.return_value.post.return_value = mock_response
+        mock_http.__aexit__ = mocker.AsyncMock(return_value=None)
+
+        mocker.patch("httpx.AsyncClient", return_value=mock_http)
+
+        await client.complete("s", "u", SCHEMA)
+        assert client.total_usage == LlmUsage()

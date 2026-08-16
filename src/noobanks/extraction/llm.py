@@ -15,11 +15,24 @@ import json
 import logging
 import os
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Any
 
 from noobanks.config.models import LlmConfig
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class LlmUsage:
+    """Token consumption reported by the LLM backend for one run."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+    @property
+    def total(self) -> int:
+        return self.input_tokens + self.output_tokens
 
 
 def _validate_json_result(
@@ -128,6 +141,7 @@ class ClaudeLlmClient(LlmClient):
 
         self.model = model
         self.max_tokens = max_tokens
+        self.total_usage = LlmUsage()
         self._client = AsyncAnthropic()
 
     async def complete(
@@ -151,6 +165,11 @@ class ClaudeLlmClient(LlmClient):
             },
             messages=[{"role": "user", "content": user}],
         )
+
+        usage = getattr(response, "usage", None)
+        if usage is not None:
+            self.total_usage.input_tokens += getattr(usage, "input_tokens", 0) or 0
+            self.total_usage.output_tokens += getattr(usage, "output_tokens", 0) or 0
 
         if response.stop_reason == "refusal":
             raise ValueError(
@@ -191,6 +210,7 @@ class DeepSeekLlmClient(LlmClient):
         self.api_key_env = api_key_env
         self.max_tokens = max_tokens
         self._timeout = timeout
+        self.total_usage = LlmUsage()
 
     async def complete(
         self,
@@ -244,6 +264,10 @@ class DeepSeekLlmClient(LlmClient):
             text = data["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
             raise ValueError(f"Unexpected DeepSeek response shape: {str(data)[:300]}") from exc
+
+        usage = data.get("usage") or {}
+        self.total_usage.input_tokens += int(usage.get("prompt_tokens", 0) or 0)
+        self.total_usage.output_tokens += int(usage.get("completion_tokens", 0) or 0)
 
         finish = data["choices"][0].get("finish_reason", "unknown")
         return _validate_json_result(

@@ -71,6 +71,17 @@ class MetricExtractor:
             self._llm = create_llm_client(load_llm_config())
         return self._llm
 
+    @property
+    def total_usage(self):
+        """Cumulative token consumption reported by the LLM client.
+
+        Returns an LlmUsage, or None when the client does not track usage
+        (e.g. test fakes).
+        """
+        from noobanks.extraction.llm import LlmUsage
+
+        return getattr(self.llm, "total_usage", None)
+
     async def extract(
         self,
         spec: MetricSpec,
