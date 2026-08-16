@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
 
@@ -170,6 +172,11 @@ parse_app = typer.Typer(help="Convert raw PDFs into processed markdown.")
 app.add_typer(parse_app, name="parse")
 
 
+def _default_parse_workers() -> int:
+    """Default concurrency for `parse all`: half the CPU cores (min 1)."""
+    return max(1, (os.cpu_count() or 2) // 2)
+
+
 def _parse_one(
     store: ReportStore, bank: BankSpec, year: int, force: bool
 ) -> tuple[bool, str]:
@@ -232,25 +239,40 @@ def parse_all(
     force: bool = typer.Option(
         False, "--force", "-f", help="Re-parse even if already processed",
     ),
+    max_workers: Optional[int] = typer.Option(
+        None, "--max-workers", "-w",
+        help="Max parallel parses (default: half of CPU cores)",
+    ),
 ) -> None:
     """Parse every available downloaded report into processed markdown."""
     registry = load_bank_registry()
     banks = registry.by_market(market) if market else list(registry.banks)
     store = ReportStore(data_dir)
+    workers = max_workers or _default_parse_workers()
 
-    console.print(f"Parsing {len(banks)} banks for FY{year}...")
+    console.print(
+        f"Parsing {len(banks)} banks for FY{year} (up to {workers} in parallel)..."
+    )
     parsed, skipped, failed = [], [], []
-    for bank in banks:
-        ok, message = _parse_one(store, bank, year, force)
-        if not ok:
-            failed.append(bank.ticker)
-            console.print(f"  [red]✗[/red] {bank.ticker}: {message}")
-        elif "already parsed" in message:
-            skipped.append(bank.ticker)
-            console.print(f"  [dim]•[/dim] {bank.ticker}: {message}")
-        else:
-            parsed.append(bank.ticker)
-            console.print(f"  [green]✓[/green] {bank.ticker}: {message}")
+
+    # CPU-bound work (pymupdf4llm) — run in a process pool.
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        futures = {
+            executor.submit(_parse_one, store, bank, year, force): bank
+            for bank in banks
+        }
+        for future in as_completed(futures):
+            bank = futures[future]
+            ok, message = future.result()
+            if not ok:
+                failed.append(bank.ticker)
+                console.print(f"  [red]✗[/red] {bank.ticker}: {message}")
+            elif "already parsed" in message:
+                skipped.append(bank.ticker)
+                console.print(f"  [dim]•[/dim] {bank.ticker}: {message}")
+            else:
+                parsed.append(bank.ticker)
+                console.print(f"  [green]✓[/green] {bank.ticker}: {message}")
 
     console.print(
         f"\n[bold]Summary:[/bold] {len(parsed)} parsed, "
