@@ -264,7 +264,7 @@ class TestFetchCached:
     async def test_force_re_downloads(self, tmp_data_dir: Path, mocker):
         # Use a bank with a non-existent IR URL to force discovery failure
         bank = _make_bank(ticker="BOGUS.XX", market="UK")
-        adapter = GenericIrAdapter(data_dir=tmp_data_dir)
+        adapter = GenericIrAdapter(data_dir=tmp_data_dir, browser_fallback=False)
         target = adapter.target_path(tmp_data_dir, 2025, "BOGUS_XX", "annual_report", "FY")
         target.parent.mkdir(parents=True)
         target.write_bytes(b"%PDF-1.4\nold\n%%EOF")
@@ -283,7 +283,7 @@ class TestFetchNoUrls:
     async def test_returns_error_when_no_urls_discovered(
         self, tmp_data_dir: Path, sample_bank_spec: BankSpec, mocker
     ):
-        adapter = GenericIrAdapter(data_dir=tmp_data_dir)
+        adapter = GenericIrAdapter(data_dir=tmp_data_dir, browser_fallback=False)
         # The bank's IR URL doesn't exist → discovery will fail
         # We can make this deterministic by using a bank with a clearly bogus URL
         bank = _make_bank(ticker="BOGUS.TK", market="UK")
@@ -640,6 +640,7 @@ class TestSearchFallback:
         adapter = GenericIrAdapter()
 
         mocker.patch.object(adapter, "_crawl_for_report_pages", return_value=[])
+        mocker.patch.object(adapter, "_discover_via_browser", return_value=[])
         mocker.patch.object(adapter, "_construct_candidates", return_value=[])
         mocker.patch.object(
             adapter, "_search_fallback",
@@ -683,6 +684,176 @@ class TestSearchFallback:
             assert rt in REPORT_TYPE_LABELS, f"Missing label for {rt}"
 
 
+# ── Browser fallback (Playwright) ──────────────────────────────────────────
+
+
+class TestBrowserFallback:
+    """Tests for the headless-browser fallback — playwright-free.
+
+    The real Playwright client is never imported: tests patch the
+    `_render_page` / `_discover_via_browser` wrapper methods instead.
+    """
+
+    def _bank(self, ir_url: str) -> BankSpec:
+        return BankSpec(
+            name="ICBC",
+            ticker="601398.SH",
+            exchange="SSE",
+            market="CN",
+            sources=SourceConfig(investor_relations=ir_url),
+            filings=["annual_report"],
+        )
+
+    @pytest.mark.asyncio
+    async def test_discover_urls_uses_browser_fallback_when_crawl_empty(self, mocker):
+        """When the static crawl finds nothing, try the browser render."""
+        ir_url = "https://www.icbc-ltd.com/en/page/1220.html"
+        pdf = "https://www.icbc-ltd.com/en/page/2025-annual-report.pdf"
+        adapter = GenericIrAdapter()
+
+        mocker.patch.object(adapter, "_validate_ir_url", return_value={"valid": True})
+        mocker.patch.object(adapter, "_crawl_for_report_pages", return_value=[])
+        mocker.patch.object(adapter, "_construct_candidates", return_value=[])
+        mocker.patch.object(adapter, "_search_fallback", return_value=[])
+        browser_spy = mocker.patch.object(
+            adapter, "_discover_via_browser", return_value=[pdf]
+        )
+
+        urls = await adapter.discover_urls(self._bank(ir_url), "annual_report", 2025)
+        assert urls == [pdf]
+        browser_spy.assert_called_once_with(ir_url, "annual_report", "2025", "25")
+
+    @pytest.mark.asyncio
+    async def test_discover_urls_skips_browser_when_crawl_succeeds(self, mocker):
+        """When the crawl finds PDFs, never touch the browser."""
+        adapter = GenericIrAdapter()
+        crawled = ["https://home.barclays/reports/2025-annual-report.pdf"]
+        mocker.patch.object(adapter, "_validate_ir_url", return_value={"valid": True})
+        mocker.patch.object(adapter, "_crawl_for_report_pages", return_value=crawled)
+        browser_spy = mocker.patch.object(adapter, "_discover_via_browser", return_value=[])
+
+        urls = await adapter.discover_urls(
+            self._bank("https://home.barclays/investor-relations"), "annual_report", 2025
+        )
+        assert urls == crawled
+        browser_spy.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_browser_fallback_disabled_via_constructor(self, mocker):
+        """browser_fallback=False bypasses the render step entirely."""
+        adapter = GenericIrAdapter(browser_fallback=False)
+        search_url = "https://cdn.example.com/report-2025.pdf"
+        mocker.patch.object(adapter, "_validate_ir_url", return_value={"valid": True})
+        mocker.patch.object(adapter, "_crawl_for_report_pages", return_value=[])
+        mocker.patch.object(adapter, "_construct_candidates", return_value=[])
+        mocker.patch.object(adapter, "_search_fallback", return_value=[search_url])
+        browser_spy = mocker.patch.object(adapter, "_discover_via_browser", return_value=[])
+
+        urls = await adapter.discover_urls(
+            self._bank("https://www.icbc-ltd.com/en/page/1220.html"), "annual_report", 2025
+        )
+        assert urls == [search_url]
+        browser_spy.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_render_page_returns_none_when_playwright_missing(self, mocker):
+        """Missing playwright degrades to None (no exception)."""
+        import sys
+
+        adapter = GenericIrAdapter()
+        mocker.patch.dict(
+            sys.modules, {"playwright": None, "playwright.async_api": None}
+        )
+        assert await adapter._render_page("https://example.com") is None
+
+    @pytest.mark.asyncio
+    async def test_render_page_returns_none_on_render_failure(self, mocker):
+        """Any render failure degrades to None (no exception)."""
+        import sys
+        import types
+
+        async def boom():
+            raise RuntimeError("no browser binary")
+
+        stub = types.ModuleType("playwright.async_api")
+        stub.async_playwright = boom
+        mocker.patch.dict(
+            sys.modules,
+            {
+                "playwright": types.ModuleType("playwright"),
+                "playwright.async_api": stub,
+            },
+        )
+
+        adapter = GenericIrAdapter()
+        assert await adapter._render_page("https://example.com") is None
+
+    @pytest.mark.asyncio
+    async def test_discover_via_browser_extracts_pdfs_from_rendered_landing(self, mocker):
+        """PDF links in the rendered landing page are extracted directly."""
+        ir_url = "https://www.icbc-ltd.com/en/page/1220.html"
+        adapter = GenericIrAdapter()
+        render_spy = mocker.patch.object(
+            adapter,
+            "_render_page",
+            return_value=_pdf_links_html(ir_url, "/en/page/2025-annual-report.pdf"),
+        )
+
+        urls = await adapter._discover_via_browser(
+            ir_url, "annual_report", "2025", "25"
+        )
+        assert urls == ["https://www.icbc-ltd.com/en/page/2025-annual-report.pdf"]
+        render_spy.assert_called_once_with(ir_url)
+
+    @pytest.mark.asyncio
+    async def test_discover_via_browser_follows_nav_links_when_no_direct_pdfs(self, mocker):
+        """Without direct PDFs, render same-domain nav pages and extract there."""
+        ir_url = "https://www.icbc-ltd.com/en/page/1220.html"
+        nav_url = "https://www.icbc-ltd.com/en/page/financial-results/"
+        adapter = GenericIrAdapter()
+        landing = (
+            '<html><body><a href="/en/page/financial-results/">'
+            "Financial Results</a></body></html>"
+        )
+        nav_page = _pdf_links_html(nav_url, "annual-report-2025.pdf")
+        render_spy = mocker.patch.object(
+            adapter, "_render_page", side_effect=[landing, nav_page]
+        )
+
+        urls = await adapter._discover_via_browser(
+            ir_url, "annual_report", "2025", "25"
+        )
+        assert urls == [f"{nav_url}annual-report-2025.pdf"]
+        assert render_spy.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_discover_via_browser_bounds_nav_pages_and_stays_same_domain(self, mocker):
+        """Nav rendering is capped and external domains are never rendered."""
+        ir_url = "https://www.icbc-ltd.com/en/page/1220.html"
+        adapter = GenericIrAdapter(browser_max_pages=1)
+        landing = (
+            "<html><body>"
+            '<a href="/en/page/annual-reports/">Annual Reports</a>'
+            '<a href="https://other.example.com/annual-reports/">External</a>'
+            '<a href="/en/page/financial-results/">Financial Results</a>'
+            "</body></html>"
+        )
+        nav_page = _pdf_links_html(
+            "https://www.icbc-ltd.com/en/page/annual-reports/", "report-2025.pdf"
+        )
+        render_spy = mocker.patch.object(
+            adapter, "_render_page", side_effect=[landing, nav_page]
+        )
+
+        urls = await adapter._discover_via_browser(
+            ir_url, "annual_report", "2025", "25"
+        )
+        assert render_spy.call_count == 2  # landing + first same-domain nav only
+        for call in render_spy.call_args_list:
+            assert "other.example.com" not in str(call.args[0])
+        assert urls == ["https://www.icbc-ltd.com/en/page/annual-reports/report-2025.pdf"]
+
+
 # ── Constructor ────────────────────────────────────────────────────────────
 
 
@@ -694,6 +865,8 @@ class TestGenericIrAdapterInit:
         assert adapter.data_dir == DEFAULT_DATA_DIR
         assert adapter.timeout == 30
         assert adapter.rate_limit_delay == 3.0
+        assert adapter.browser_fallback is True
+        assert adapter.browser_max_pages == 3
 
     def test_custom_values(self, tmp_path: Path):
         adapter = GenericIrAdapter(
@@ -701,7 +874,11 @@ class TestGenericIrAdapterInit:
             timeout=60,
             rate_limit_delay=1.0,
             max_concurrent=8,
+            browser_fallback=False,
+            browser_max_pages=1,
         )
         assert adapter.data_dir == tmp_path
         assert adapter.timeout == 60
         assert adapter.rate_limit_delay == 1.0
+        assert adapter.browser_fallback is False
+        assert adapter.browser_max_pages == 1

@@ -88,8 +88,10 @@ class GenericIrAdapter(SourceAdapter):
     Ports the URL discovery heuristics from the report-fetcher agent into Python:
     1. Scrape the IR landing page → extract all PDF links matching report type + year
     2. Follow common IR sub-paths and scrape those too
-    3. Construct candidate URLs from per-market patterns as fallback
-    4. HEAD-verify candidates before download
+    3. If the static crawl finds nothing, render the IR page in a headless
+       browser (Playwright) to capture JS-rendered content
+    4. Construct candidate URLs from per-market patterns as fallback
+    5. HEAD-verify candidates before download
     """
 
     def __init__(
@@ -104,11 +106,15 @@ class GenericIrAdapter(SourceAdapter):
         ),
         rate_limit_delay: float = 3.0,
         max_concurrent: int = 4,
+        browser_fallback: bool = True,
+        browser_max_pages: int = 3,
     ):
         self.data_dir = Path(data_dir)
         self.timeout = timeout
         self.user_agent = user_agent
         self.rate_limit_delay = rate_limit_delay
+        self.browser_fallback = browser_fallback
+        self.browser_max_pages = browser_max_pages
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._domain_timers: dict[str, float] = {}
 
@@ -225,8 +231,24 @@ class GenericIrAdapter(SourceAdapter):
             candidates, key=lambda u: self._url_score(u, year_str), reverse=True
         )
 
+        if not candidates_list and self.browser_fallback:
+            # 4. Fallback: render the IR page in a headless browser to
+            #    capture JS-rendered content (e.g. ICBC-style AJAX shells)
+            logger.info(
+                "Crawl found no PDFs for %s %s %s; trying headless-browser render",
+                bank.ticker, report_type, year,
+            )
+            browser_links = await self._discover_via_browser(
+                ir_base, report_type, year_str, year_short
+            )
+            candidates_list = sorted(
+                browser_links,
+                key=lambda u: self._url_score(u, year_str),
+                reverse=True,
+            )
+
         if not candidates_list:
-            # 4. Fallback: try constructed URLs from common patterns
+            # 5. Fallback: try constructed URLs from common patterns
             logger.info(
                 "Crawl found no PDFs for %s %s %s; trying URL construction",
                 bank.ticker, report_type, year,
@@ -234,7 +256,7 @@ class GenericIrAdapter(SourceAdapter):
             candidates_list = self._construct_candidates(bank, year_str, year_short)
 
         if not candidates_list:
-            # 5. Last resort: DuckDuckGo web search fallback
+            # 6. Last resort: DuckDuckGo web search fallback
             logger.info(
                 "Crawl and construction both failed for %s %s %s; trying web search",
                 bank.ticker, report_type, year,
@@ -608,6 +630,120 @@ class GenericIrAdapter(SourceAdapter):
             ir_base, len(visited), len(all_pdf_links), max_depth,
         )
         return all_pdf_links
+
+    async def _render_page(
+        self, url: str, timeout: Optional[int] = None
+    ) -> Optional[str]:
+        """Render a page in a headless browser and return the post-JS HTML.
+
+        Used as a fallback when the static crawl finds no PDF links — the
+        raw HTML of JS-rendered IR pages (e.g. ICBC) is an AJAX shell whose
+        report links only exist after JavaScript runs in a real browser.
+
+        Playwright is a project dependency (installed by `uv sync`), but
+        the browser binaries need a one-time
+        `uv run playwright install chromium`. Every failure mode —
+        missing package, missing browser binary, timeouts, anti-bot blocks —
+        degrades to a warning + None so the caller falls through to the
+        next discovery strategy.
+
+        Args:
+            url: Page to render.
+            timeout: Navigation timeout in seconds (defaults to self.timeout).
+
+        Returns:
+            Rendered HTML as a string, or None if rendering failed.
+        """
+        try:
+            from playwright.async_api import async_playwright
+        except ImportError:
+            logger.warning(
+                "Playwright not installed; run 'uv sync' to install project "
+                "dependencies and 'uv run playwright install chromium' for the "
+                "browser binaries"
+            )
+            return None
+
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                try:
+                    context = await browser.new_context(user_agent=self.user_agent)
+                    page = await context.new_page()
+                    await page.goto(
+                        url,
+                        wait_until="networkidle",
+                        timeout=(timeout or self.timeout) * 1000,  # playwright uses ms
+                    )
+                    return await page.content()
+                finally:
+                    await browser.close()
+        except Exception as exc:
+            logger.warning("Browser render failed for %s: %s", url, exc)
+            return None
+
+    async def _discover_via_browser(
+        self,
+        ir_base: str,
+        report_type: str,
+        year_str: str,
+        year_short: str,
+        max_pages: Optional[int] = None,
+    ) -> list[str]:
+        """Discover PDF links by rendering the IR page in a headless browser.
+
+        Renders ir_base (running any JavaScript), extracts PDF links from
+        the rendered DOM via _extract_pdf_links. If the landing page has no
+        PDFs, follows up to browser_max_pages same-domain navigation links
+        from the rendered DOM and extracts PDFs from those pages too.
+
+        Args:
+            ir_base: The bank's IR landing page URL.
+            report_type: Report type key (annual_report, 10-K, ...).
+            year_str: 4-digit year as string ("2025").
+            year_short: 2-digit year as string ("25").
+            max_pages: Max nav pages to render (defaults to
+                self.browser_max_pages).
+
+        Returns:
+            List of PDF URLs discovered in rendered pages.
+        """
+        domain = urlparse(ir_base).netloc
+        await self._rate_limit(domain)
+
+        html = await self._render_page(ir_base)
+        if html is None:
+            return []
+
+        pdfs = self._extract_pdf_links(
+            html, ir_base, report_type, year_str, year_short
+        )
+        if pdfs:
+            return pdfs
+
+        # No direct PDFs on the landing page — follow report-related
+        # navigation links found in the rendered DOM.
+        nav_links = self._extract_nav_links(html, ir_base)
+        results: list[str] = []
+        pages_rendered = 0
+        for nav_url in nav_links:
+            if urlparse(nav_url).netloc != domain:
+                continue  # stay on the same domain (mirrors the crawl)
+            if pages_rendered >= (max_pages or self.browser_max_pages):
+                break
+            pages_rendered += 1
+
+            await self._rate_limit(domain)
+            nav_html = await self._render_page(nav_url)
+            if nav_html is None:
+                continue
+            for link in self._extract_pdf_links(
+                nav_html, nav_url, report_type, year_str, year_short
+            ):
+                if link not in results:
+                    results.append(link)
+
+        return results
 
     def _construct_candidates(
         self, bank: BankSpec, year_str: str, year_short: str

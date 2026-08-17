@@ -123,7 +123,7 @@ banks:
     exchange: SSE
     market: CN
     sources:
-      investor_relations: https://www.cmbchina.com/cmbir
+      investor_relations: https://english.cmbchina.com/Cmbir/intro.aspx?type=report
     filings: [annual_report, interim_report, quarterly_report]
 
   - name: Ping An Bank Co. Ltd.

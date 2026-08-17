@@ -16,6 +16,7 @@ dependencies = [
     "pydantic>=2.10",
     "pymupdf>=1.28.2",
     "pymupdf4llm>=1.28.2",
+    "playwright>=1.45",
     "pyyaml>=6.0",
     "rich>=13.9",
     "tenacity>=9.0",

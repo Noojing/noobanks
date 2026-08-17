@@ -14,6 +14,8 @@ The project is in **early design/implementation phase**: the architecture is def
 uv build              # build the package
 uv run noobanks       # run the CLI entry point (currently prints "Hello from noobanks!")
 uv run --with pyyaml python -c "import yaml; ..."  # ad-hoc scripts with extra deps
+# JS-rendered IR pages need a one-time browser install (Playwright is a project dependency):
+uv run playwright install chromium
 ```
 
 Python **3.14+** is required (see `.python-version`). All dependencies are managed with `uv`.
