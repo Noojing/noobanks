@@ -9,6 +9,10 @@ build/
 venv/
 *.whl
 *.tar.gz
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
 
 # ── VSCode ──────────────────────────────────────────────────────────────────
 .vscode/
