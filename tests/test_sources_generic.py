@@ -716,7 +716,7 @@ class TestBrowserFallback:
         mocker.patch.object(adapter, "_construct_candidates", return_value=[])
         mocker.patch.object(adapter, "_search_fallback", return_value=[])
         browser_spy = mocker.patch.object(
-            adapter, "_discover_via_browser", return_value=[pdf]
+            adapter, "_discover_via_browser", return_value=[(pdf, "2025 Annual Report")]
         )
 
         urls = await adapter.discover_urls(self._bank(ir_url), "annual_report", 2025)
@@ -802,7 +802,9 @@ class TestBrowserFallback:
         urls = await adapter._discover_via_browser(
             ir_url, "annual_report", "2025", "25"
         )
-        assert urls == ["https://www.icbc-ltd.com/en/page/2025-annual-report.pdf"]
+        assert urls == [
+            ("https://www.icbc-ltd.com/en/page/2025-annual-report.pdf", "2025-annual-report.pdf")
+        ]
         render_spy.assert_called_once_with(ir_url)
 
     @pytest.mark.asyncio
@@ -823,7 +825,7 @@ class TestBrowserFallback:
         urls = await adapter._discover_via_browser(
             ir_url, "annual_report", "2025", "25"
         )
-        assert urls == [f"{nav_url}annual-report-2025.pdf"]
+        assert urls == [(f"{nav_url}annual-report-2025.pdf", "annual-report-2025.pdf")]
         assert render_spy.call_count == 2
 
     @pytest.mark.asyncio
@@ -851,7 +853,145 @@ class TestBrowserFallback:
         assert render_spy.call_count == 2  # landing + first same-domain nav only
         for call in render_spy.call_args_list:
             assert "other.example.com" not in str(call.args[0])
-        assert urls == ["https://www.icbc-ltd.com/en/page/annual-reports/report-2025.pdf"]
+        assert urls == [
+            ("https://www.icbc-ltd.com/en/page/annual-reports/report-2025.pdf", "report-2025.pdf")
+        ]
+
+    @pytest.mark.asyncio
+    async def test_discover_urls_ranks_annual_above_interim(self, mocker):
+        """Rendered candidates: annual-report anchor text outranks interim."""
+        ir_url = "https://www.icbc-ltd.com/en/page/1220.html"
+        adapter = GenericIrAdapter()
+        interim_url = "https://www.icbc-ltd.com/en/page/2024InterimReport.pdf"
+        annual_url = "https://www.icbc-ltd.com/en/page/2024AnnualReport.pdf"
+
+        mocker.patch.object(adapter, "_validate_ir_url", return_value={"valid": True})
+        mocker.patch.object(adapter, "_crawl_for_report_pages", return_value=[])
+        mocker.patch.object(
+            adapter,
+            "_discover_via_browser",
+            return_value=[
+                (interim_url, "2024 Interim Report"),
+                (annual_url, "2024 Annual Report"),
+            ],
+        )
+
+        urls = await adapter.discover_urls(self._bank(ir_url), "annual_report", 2024)
+        assert urls[0] == annual_url
+        assert urls[1] == interim_url
+
+
+# ── URL scoring (link text + report type) ──────────────────────────────────
+
+
+class TestUrlScoreTextAware:
+    """Tests for _url_score with link text + report type weighting."""
+
+    def test_backward_compatible_legacy_scoring(self):
+        """No link_text/report_type → identical to the legacy formula."""
+        adapter = GenericIrAdapter()
+        assert adapter._url_score("https://example.com/annual-report-2025.pdf", "2025") == 7
+
+    def test_year_in_link_text_beats_year_in_url(self):
+        adapter = GenericIrAdapter()
+        text_only = adapter._url_score(
+            "https://example.com/report.pdf", "2025",
+            link_text="2025 Annual Report", report_type="annual_report",
+        )
+        url_only = adapter._url_score(
+            "https://example.com/2025/report.pdf", "2025",
+            link_text="Download", report_type="annual_report",
+        )
+        assert text_only > url_only
+
+    def test_type_keyword_in_text_beats_type_keyword_in_url(self):
+        adapter = GenericIrAdapter()
+        text_only = adapter._url_score(
+            "https://example.com/2025/x.pdf", "2025",
+            link_text="2025 Annual Report", report_type="annual_report",
+        )
+        url_only = adapter._url_score(
+            "https://example.com/annual-report-2025.pdf", "2025",
+            link_text="download", report_type="annual_report",
+        )
+        assert text_only > url_only
+
+    def test_interim_penalized_for_annual_report(self):
+        adapter = GenericIrAdapter()
+        interim = adapter._url_score(
+            "https://example.com/2024InterimReport.pdf", "2024",
+            link_text="2024 Interim Report", report_type="annual_report",
+        )
+        annual = adapter._url_score(
+            "https://example.com/2024AnnualReport.pdf", "2024",
+            link_text="2024 Annual Report", report_type="annual_report",
+        )
+        assert annual > interim
+
+    def test_interim_results_penalized_for_annual_report(self):
+        """Opaque 'InterimResults' filenames are also penalized."""
+        adapter = GenericIrAdapter()
+        interim = adapter._url_score(
+            "https://example.com/2024InterimResultsEn20240914.pdf", "2024",
+            link_text="", report_type="annual_report",
+        )
+        annual = adapter._url_score(
+            "https://example.com/2024/2024AnnualReport.pdf", "2024",
+            link_text="", report_type="annual_report",
+        )
+        assert annual > interim
+
+    def test_announcement_ranks_below_annual_report(self):
+        """Non-report documents (announcements) rank below real reports."""
+        adapter = GenericIrAdapter()
+        announcement = adapter._url_score(
+            "https://example.com/2024/Announcement20241030.pdf", "2024",
+            link_text="", report_type="annual_report",
+        )
+        annual = adapter._url_score(
+            "https://example.com/2024/2024AnnualReport.pdf", "2024",
+            link_text="", report_type="annual_report",
+        )
+        assert annual > announcement
+
+    def test_briefing_and_qa_record_penalized(self):
+        """Opaque non-report names (briefings, Q&A records) are penalized."""
+        adapter = GenericIrAdapter()
+        annual = adapter._url_score(
+            "https://example.com/2024/2024AnnualReport.pdf", "2024",
+            link_text="", report_type="annual_report",
+        )
+        for name in ("ResultsBriefing20240422.pdf", "QARecord20240914.pdf"):
+            score = adapter._url_score(
+                f"https://example.com/2024/{name}", "2024",
+                link_text="", report_type="annual_report",
+            )
+            assert annual > score, name
+
+    def test_anchor_text_outvotes_url_penalty(self):
+        """Positive anchor text outweighs a URL-level non-report penalty."""
+        adapter = GenericIrAdapter()
+        score = adapter._url_score(
+            "https://example.com/2024/annualresults.pdf", "2024",
+            link_text="2024 Annual Report", report_type="annual_report",
+        )
+        assert score > 8  # +6 year-text, +5 annual-text, −2 url penalty, +1 non-cdn
+
+    def test_extract_pdf_links_with_text_returns_pairs(self):
+        """with_text=True returns (url, anchor_text) pairs; default is strings."""
+        adapter = GenericIrAdapter()
+        html = _pdf_links_html("https://example.com", "annual-report-2025.pdf")
+        urls = adapter._extract_pdf_links(
+            html, "https://example.com", "annual_report", "2025", "25"
+        )
+        assert urls == ["https://example.com/annual-report-2025.pdf"]
+        pairs = adapter._extract_pdf_links(
+            html, "https://example.com", "annual_report", "2025", "25",
+            with_text=True,
+        )
+        assert pairs == [
+            ("https://example.com/annual-report-2025.pdf", "annual-report-2025.pdf")
+        ]
 
 
 # ── Constructor ────────────────────────────────────────────────────────────

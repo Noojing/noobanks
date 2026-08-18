@@ -56,6 +56,41 @@ REPORT_TYPE_LABELS: dict[str, str] = {
     "pillar3": "pillar 3 disclosures",
 }
 
+# Report-type keywords for candidate scoring. Used by _url_score to reward
+# URLs/link texts that match the requested report type and penalize those
+# that match a different type (e.g. "interim" files when fetching an annual
+# report). Deliberately curated: bare "h1"/"q1" etc. are excluded because
+# short substrings produce too many false positives.
+REPORT_TYPE_SCORE_KEYWORDS: dict[str, list[str]] = {
+    "annual_report": [
+        "annual report", "annual-report", "annual_report", "annualreport",
+        "full-year", "full_year",
+    ],
+    "interim_report": [
+        "interim report", "interim-report", "interim_report", "interimreport",
+        "interim results", "interim-results", "interim_results", "interimresults",
+        "half-year", "half_year", "half year", "half-year results",
+    ],
+    "quarterly_report": [
+        "quarterly report", "quarterly-report", "quarterly_report", "quarterlyreport",
+    ],
+    "10-K": ["10-k", "10k"],
+    "10-Q": ["10-q", "10q"],
+    "8-K": ["8-k", "8k"],
+    "pillar3": ["pillar 3", "pillar-3", "pillar3", "pillar_3"],
+}
+
+# Filenames that signal a non-report document (results announcements,
+# circulars, notices, Q&A records, briefing slides). Penalized in
+# _url_score's text-aware branch — these commonly co-exist with real
+# reports on IR listing pages (e.g. ICBC's opaque CamelCase filenames).
+# Anchor-text positives (+5/+6) outvote these URL-level penalties, so a
+# link whose text says "Annual Report" is unaffected.
+NON_REPORT_SCORE_KEYWORDS: list[str] = [
+    "announcement", "circular", "notice", "briefing", "qarecord",
+    "annual results", "annual-results", "annual_results", "annualresults",
+]
+
 # Keywords for detecting report-related navigation links in HTML.
 # Matched against <a> tag text OR href. Links matching these keywords
 # are followed during recursive crawling to find report download pages.
@@ -241,11 +276,16 @@ class GenericIrAdapter(SourceAdapter):
             browser_links = await self._discover_via_browser(
                 ir_base, report_type, year_str, year_short
             )
-            candidates_list = sorted(
-                browser_links,
-                key=lambda u: self._url_score(u, year_str),
-                reverse=True,
-            )
+            candidates_list = [
+                url
+                for url, _ in sorted(
+                    browser_links,
+                    key=lambda ut: self._url_score(
+                        ut[0], year_str, link_text=ut[1], report_type=report_type
+                    ),
+                    reverse=True,
+                )
+            ]
 
         if not candidates_list:
             # 5. Fallback: try constructed URLs from common patterns
@@ -421,7 +461,9 @@ class GenericIrAdapter(SourceAdapter):
         report_type: str,
         year_str: str,
         year_short: str,
-    ) -> list[str]:
+        *,
+        with_text: bool = False,
+    ) -> list[str] | list[tuple[str, str]]:
         """Parse HTML and extract PDF hrefs matching the report type + year.
 
         Matching is done against three signals (any one is sufficient):
@@ -430,10 +472,25 @@ class GenericIrAdapter(SourceAdapter):
         3. URL path segment contains the target year or publication year (year+1)
            — needed for ABC where filenames are opaque (P02026042…pdf) but
            paths encode the publication date (/202603/ for FY2025).
+
+        Args:
+            with_text: When True, return (url, anchor_text) pairs so callers
+                can score candidates with the link text (see _url_score).
+                Defaults to plain URL strings.
         """
         patterns = REPORT_PATTERNS.get(report_type, [report_type.lower()])
         soup = BeautifulSoup(html, "lxml")
-        links: list[str] = []
+        links: list[str] | list[tuple[str, str]] = []
+        seen: set[str] = set()
+
+        def _append(full_url: str, a_tag) -> None:
+            if full_url in seen:
+                return
+            seen.add(full_url)
+            if with_text:
+                links.append((full_url, a_tag.get_text(strip=True)))  # type: ignore[arg-type]
+            else:
+                links.append(full_url)  # type: ignore[arg-type]
 
         def _year_in_path(href: str) -> bool:
             """Check if the target fiscal year appears in URL path segments."""
@@ -461,9 +518,7 @@ class GenericIrAdapter(SourceAdapter):
             year_in_text = _year_in_text(a_tag.get_text(strip=True))
 
             if year_in_href or year_in_path or year_in_text:
-                full_url = urljoin(base_url, href)
-                if full_url not in links:
-                    links.append(full_url)
+                _append(urljoin(base_url, href), a_tag)
 
         # Relaxed fallback: any PDF with year (via href, path, or text)
         if not links:
@@ -478,9 +533,7 @@ class GenericIrAdapter(SourceAdapter):
                     or _year_in_path(href)
                     or _year_in_text(a_tag.get_text(strip=True))
                 ):
-                    full_url = urljoin(base_url, href)
-                    if full_url not in links:
-                        links.append(full_url)
+                    _append(urljoin(base_url, href), a_tag)
 
         return links
 
@@ -689,7 +742,7 @@ class GenericIrAdapter(SourceAdapter):
         year_str: str,
         year_short: str,
         max_pages: Optional[int] = None,
-    ) -> list[str]:
+    ) -> list[tuple[str, str]]:
         """Discover PDF links by rendering the IR page in a headless browser.
 
         Renders ir_base (running any JavaScript), extracts PDF links from
@@ -706,7 +759,8 @@ class GenericIrAdapter(SourceAdapter):
                 self.browser_max_pages).
 
         Returns:
-            List of PDF URLs discovered in rendered pages.
+            (url, anchor_text) pairs discovered in rendered pages — anchor
+            text lets callers score candidates with _url_score.
         """
         domain = urlparse(ir_base).netloc
         await self._rate_limit(domain)
@@ -716,7 +770,7 @@ class GenericIrAdapter(SourceAdapter):
             return []
 
         pdfs = self._extract_pdf_links(
-            html, ir_base, report_type, year_str, year_short
+            html, ir_base, report_type, year_str, year_short, with_text=True
         )
         if pdfs:
             return pdfs
@@ -724,7 +778,8 @@ class GenericIrAdapter(SourceAdapter):
         # No direct PDFs on the landing page — follow report-related
         # navigation links found in the rendered DOM.
         nav_links = self._extract_nav_links(html, ir_base)
-        results: list[str] = []
+        results: list[tuple[str, str]] = []
+        seen: set[str] = set()
         pages_rendered = 0
         for nav_url in nav_links:
             if urlparse(nav_url).netloc != domain:
@@ -737,11 +792,13 @@ class GenericIrAdapter(SourceAdapter):
             nav_html = await self._render_page(nav_url)
             if nav_html is None:
                 continue
-            for link in self._extract_pdf_links(
-                nav_html, nav_url, report_type, year_str, year_short
+            for link, text in self._extract_pdf_links(
+                nav_html, nav_url, report_type, year_str, year_short,
+                with_text=True,
             ):
-                if link not in results:
-                    results.append(link)
+                if link not in seen:
+                    seen.add(link)
+                    results.append((link, text))
 
         return results
 
@@ -861,14 +918,67 @@ class GenericIrAdapter(SourceAdapter):
         )
         return candidates
 
-    def _url_score(self, url: str, year_str: str) -> int:
-        """Score a URL for relevance (higher = better match)."""
-        score = 0
+    def _url_score(
+        self,
+        url: str,
+        year_str: str,
+        link_text: Optional[str] = None,
+        report_type: Optional[str] = None,
+    ) -> int:
+        """Score a candidate for relevance (higher = better match).
+
+        With link_text/report_type omitted, keeps the original URL-only
+        weights. When scoring rendered-page candidates, the <a> anchor text
+        — what a human reads on the page — is weighted above the URL, and
+        keywords of the requested report type add points while keywords of
+        other report types (e.g. "interim" when fetching an annual report)
+        subtract them.
+        """
         url_lower = url.lower()
-        if year_str in url:
+        text_lower = (link_text or "").lower()
+
+        if link_text is None and report_type is None:
+            # Legacy URL-only scoring
+            score = 0
+            if year_str in url:
+                score += 3
+            if "annual" in url_lower:
+                score += 2
+            if "report" in url_lower:
+                score += 1
+            if "cdn" not in url_lower and "static" not in url_lower:
+                score += 1
+            return score
+
+        score = 0
+        # Year: anchor text is the stronger signal
+        if year_str in text_lower:
+            score += 6
+        elif year_str in url_lower:
             score += 3
-        if "annual" in url_lower:
-            score += 2
+
+        # Report type: reward the requested type, penalize other types
+        if report_type:
+            for other_type, keywords in REPORT_TYPE_SCORE_KEYWORDS.items():
+                hit_in_text = any(kw in text_lower for kw in keywords)
+                hit_in_url = any(kw in url_lower for kw in keywords)
+                if other_type == report_type:
+                    if hit_in_text:
+                        score += 5
+                    elif hit_in_url:
+                        score += 4
+                else:
+                    if hit_in_text:
+                        score -= 4
+                    elif hit_in_url:
+                        score -= 3
+
+        # Non-report documents (announcements etc.) rank below real reports
+        if any(kw in text_lower for kw in NON_REPORT_SCORE_KEYWORDS):
+            score -= 3
+        elif any(kw in url_lower for kw in NON_REPORT_SCORE_KEYWORDS):
+            score -= 2
+
         if "report" in url_lower:
             score += 1
         # Prefer official domains over CDNs
