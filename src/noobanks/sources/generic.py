@@ -29,31 +29,35 @@ REPORT_PATTERNS: dict[str, list[str]] = {
     "annual_report": [
         "annual.report", "annual_report", "annualreport",
         "annual-report", "full-year", "full_year", "fy-report",
+        "年报", "年度报告",
     ],
     "interim_report": [
         "interim.report", "interim_report", "interim-report",
         "half-year", "half_year", "h1", "h2", "halfyear",
+        "中期报告", "半年报", "半年度报告",
     ],
     "quarterly_report": [
         "quarterly.report", "quarterly_report", "quarterly-report",
         "q1", "q2", "q3", "q4", "interim",
+        "季度报告", "季报", "一季度", "二季度", "三季度", "四季度",
+        "第1季度", "第2季度", "第3季度", "第4季度",
     ],
     "10-K": ["10-k", "10k", "form-10-k", "form 10-k"],
     "10-Q": ["10-q", "10q", "form-10-q", "form 10-q"],
     "8-K": ["8-k", "8k", "form-8-k", "form 8-k"],
-    "pillar3": ["pillar.3", "pillar-3", "pillar3", "pillar_3"],
+    "pillar3": ["pillar.3", "pillar-3", "pillar3", "pillar_3", "第三支柱"],
 }
 
 # Human-readable labels for search-fallback DuckDuckGo queries.
 # Maps report_type keys to phrases used in web search queries.
 REPORT_TYPE_LABELS: dict[str, str] = {
-    "annual_report": "annual report",
-    "10-K": "10-K annual report",
-    "10-Q": "10-Q quarterly report",
-    "8-K": "8-K current report",
-    "interim_report": "interim report",
-    "quarterly_report": "quarterly report",
-    "pillar3": "pillar 3 disclosures",
+    "annual_report": "annual report 年报 年度报告",
+    "10-K": "10-K annual report 10-K 年报",
+    "10-Q": "10-Q quarterly report 10-Q 季度报告",
+    "8-K": "8-K current report 8-K 当期报告",
+    "interim_report": "interim report 中期报告 半年报",
+    "quarterly_report": "quarterly report 季度报告 季报",
+    "pillar3": "pillar 3 disclosures 第三支柱",
 }
 
 # Report-type keywords for candidate scoring. Used by _url_score to reward
@@ -65,19 +69,22 @@ REPORT_TYPE_SCORE_KEYWORDS: dict[str, list[str]] = {
     "annual_report": [
         "annual report", "annual-report", "annual_report", "annualreport",
         "full-year", "full_year",
+        "年报", "年度报告",
     ],
     "interim_report": [
         "interim report", "interim-report", "interim_report", "interimreport",
         "interim results", "interim-results", "interim_results", "interimresults",
         "half-year", "half_year", "half year", "half-year results",
+        "中期报告", "半年报", "半年度报告",
     ],
     "quarterly_report": [
         "quarterly report", "quarterly-report", "quarterly_report", "quarterlyreport",
+        "季度报告", "季报",
     ],
     "10-K": ["10-k", "10k"],
     "10-Q": ["10-q", "10q"],
     "8-K": ["8-k", "8k"],
-    "pillar3": ["pillar 3", "pillar-3", "pillar3", "pillar_3"],
+    "pillar3": ["pillar 3", "pillar-3", "pillar3", "pillar_3", "第三支柱"],
 }
 
 # Filenames that signal a non-report document (results announcements,
@@ -89,6 +96,8 @@ REPORT_TYPE_SCORE_KEYWORDS: dict[str, list[str]] = {
 NON_REPORT_SCORE_KEYWORDS: list[str] = [
     "announcement", "circular", "notice", "briefing", "qarecord",
     "annual results", "annual-results", "annual_results", "annualresults",
+    "公告", "通告", "通知", "通函", "新闻稿", "会议纪要", "路演", "问答",
+    "简讯", "简报",
 ]
 
 # Keywords for detecting report-related navigation links in HTML.
@@ -106,6 +115,15 @@ NAV_KEYWORDS: list[str] = [
     "earnings", "filings", "sec-filings",
     "regulatory-news", "regulatory_filings",
     "pillar-3", "pillar_3", "pillar3",
+    # Chinese report-related navigation keywords
+    "年报", "年度报告", "年報", "年度報告",
+    "中期报告", "中期報告", "半年报", "半年報",
+    "季度报告", "季度報告", "季报", "季報",
+    "财务报告", "財務報告", "财务报表", "財務報表",
+    "业绩报告", "業績報告", "业绩公告", "業績公告",
+    "投资者关系", "投資者關係", "投资者", "投資者",
+    "信息披露", "信息揭露", "定期报告", "定期報告",
+    "公告", "报告", "報告",
 ]
 
 # Navigation-link text that should be excluded (too generic / not report-related)
@@ -115,6 +133,15 @@ NAV_EXCLUDE_TEXT: set[str] = {
     "share price", "stock", "corporate governance", "sustainability",
     "csr", "esg", "cookie", "privacy", "terms", "accessibility",
     "sitemap", "rss", "email alerts", "subscribe",
+    # Chinese generic navigation text to exclude
+    "首页", "关于", "关于我们", "关于我們",
+    "联系我们", "聯繫我們", "加入我们", "加入我們",
+    "招聘", "人才招聘", "职位", "職位",
+    "搜索", "搜尋", "登录", "登錄", "注册", "註冊",
+    "股价", "股價", "股票", "公司治理", "公司管治",
+    "可持续发展", "可持續發展", "社会责任", "社會責任",
+    "隐私", "隱私", "条款", "條款", "无障碍", "無障礙",
+    "网站地图", "網站地圖", "邮件提醒", "郵件提醒", "订阅", "訂閱",
 }
 
 class GenericIrAdapter(SourceAdapter):
@@ -242,7 +269,7 @@ class GenericIrAdapter(SourceAdapter):
         3. Fall back to per-market URL construction heuristics if crawl fails
         """
         ir_base = bank.sources.investor_relations.rstrip("/")
-        candidates: set[str] = set()
+        candidates: dict[str, str] = {}  # url -> link_text
         year_short = str(year % 100)
         year_str = str(year)
 
@@ -259,11 +286,18 @@ class GenericIrAdapter(SourceAdapter):
             crawl_links = await self._crawl_for_report_pages(
                 session, ir_base, report_type, year_str, year_short
             )
-            candidates.update(crawl_links)
+            for url, text in crawl_links:
+                if url not in candidates:
+                    candidates[url] = text
 
-        # 3. Deduplicate and sort (prefer PDFs with year in name)
+        # 3. Deduplicate and sort (prefer PDFs with year in name,
+        #    boosted by link text and report-type relevance)
         candidates_list = sorted(
-            candidates, key=lambda u: self._url_score(u, year_str), reverse=True
+            candidates,
+            key=lambda u: self._url_score(
+                u, year_str, link_text=candidates[u], report_type=report_type
+            ),
+            reverse=True,
         )
 
         if not candidates_list and self.browser_fallback:
@@ -604,7 +638,7 @@ class GenericIrAdapter(SourceAdapter):
         year_str: str,
         year_short: str,
         max_depth: int = 2,
-    ) -> list[str]:
+    ) -> list[tuple[str, str]]:
         """BFS crawl from IR landing page to discover report PDF URLs.
 
         Starting from ir_base, fetches each page, extracts:
@@ -626,11 +660,12 @@ class GenericIrAdapter(SourceAdapter):
             max_depth: How many levels of links to follow. 0 = only ir_base.
 
         Returns:
-            List of PDF URLs discovered during the crawl.
+            List of (PDF URL, anchor text) tuples discovered during the crawl.
         """
         domain = urlparse(ir_base).netloc
         visited: set[str] = set()
-        all_pdf_links: list[str] = []
+        all_pdf_links: list[tuple[str, str]] = []
+        seen_urls: set[str] = set()
 
         from collections import deque
         queue: deque[tuple[str, int]] = deque([(ir_base, 0)])
@@ -658,11 +693,13 @@ class GenericIrAdapter(SourceAdapter):
 
             # Extract PDF links from this page
             pdf_links = self._extract_pdf_links(
-                html, url, report_type, year_str, year_short
+                html, url, report_type, year_str, year_short,
+                with_text=True,
             )
-            for link in pdf_links:
-                if link not in all_pdf_links:
-                    all_pdf_links.append(link)
+            for link, text in pdf_links:  # type: ignore[misc]
+                if link not in seen_urls:
+                    seen_urls.add(link)
+                    all_pdf_links.append((link, text))
 
             # If we found PDFs at this depth, don't crawl deeper
             # (we already have results from the right page)

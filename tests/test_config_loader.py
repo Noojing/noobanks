@@ -51,7 +51,7 @@ class TestLoadBankRegistry:
     def test_loads_project_config(self):
         """Integration test: load the real banks.yaml."""
         registry = load_bank_registry()
-        assert len(registry) == 25
+        assert len(registry) == 26
         assert registry.find_by_ticker("JPM") is not None
 
     def test_raises_on_missing_file(self, tmp_path: Path):

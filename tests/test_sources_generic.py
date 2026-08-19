@@ -669,7 +669,7 @@ class TestSearchFallback:
 
         mocker.patch.object(
             adapter, "_crawl_for_report_pages",
-            return_value=["https://home.barclays/reports/2025-annual-report.pdf"],
+            return_value=[("https://home.barclays/reports/2025-annual-report.pdf", "Annual Report 2025")],
         )
         mocker.patch.object(adapter, "_validate_ir_url", return_value={"valid": True})
         fallback_spy = mocker.patch.object(adapter, "_search_fallback", return_value=[])
@@ -727,7 +727,7 @@ class TestBrowserFallback:
     async def test_discover_urls_skips_browser_when_crawl_succeeds(self, mocker):
         """When the crawl finds PDFs, never touch the browser."""
         adapter = GenericIrAdapter()
-        crawled = ["https://home.barclays/reports/2025-annual-report.pdf"]
+        crawled = [("https://home.barclays/reports/2025-annual-report.pdf", "Annual Report 2025")]
         mocker.patch.object(adapter, "_validate_ir_url", return_value={"valid": True})
         mocker.patch.object(adapter, "_crawl_for_report_pages", return_value=crawled)
         browser_spy = mocker.patch.object(adapter, "_discover_via_browser", return_value=[])
@@ -735,7 +735,7 @@ class TestBrowserFallback:
         urls = await adapter.discover_urls(
             self._bank("https://home.barclays/investor-relations"), "annual_report", 2025
         )
-        assert urls == crawled
+        assert urls == [url for url, _ in crawled]
         browser_spy.assert_not_called()
 
     @pytest.mark.asyncio

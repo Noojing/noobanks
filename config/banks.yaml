@@ -134,6 +134,14 @@ banks:
       investor_relations: http://bank.pingan.com/en/touzizheguanxijixinwen.shtml
     filings: [annual_report, interim_report, quarterly_report]
 
+  - name: Hangzhou Bank Co. Ltd.
+    ticker: "600926.SH"
+    exchange: SSE
+    market: CN
+    sources:
+      investor_relations: https://www.hzbank.com.cn/hzyh/tzzgx/dqgg/index.html
+    filings: [annual_report, interim_report, quarterly_report]
+
   # ── Hong Kong (HKEX) ──────────────────────────────────────────────────
   - name: HSBC Holdings plc
     ticker: "00005.HK"

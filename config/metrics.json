@@ -1,0 +1,996 @@
+{
+  "$schema": "https://noobanks.dev/metrics-v2.schema.json",
+  "version": "2.0",
+  "description": "Bank financial metrics extraction specification for quantitative research. Metrics are organized into categories following CAMELS + DuPont frameworks. Each metric has a controlled name, expected type, and extraction hints. Missing values are handled gracefully via the 'required' flag and the 'error' branch in extraction output.",
+
+  "categories": {
+    "profitability": {
+      "label": "Profitability & Income",
+      "description": "Core income generation, margin, and return metrics. Decomposes ROE via DuPont analysis.",
+      "order": 1
+    },
+    "asset_quality": {
+      "label": "Asset Quality & Credit Risk",
+      "description": "Loan quality, impairment, and credit risk indicators.",
+      "order": 2
+    },
+    "capital_adequacy": {
+      "label": "Capital Adequacy",
+      "description": "Regulatory capital ratios, leverage, and loss-absorption capacity.",
+      "order": 3
+    },
+    "liquidity": {
+      "label": "Liquidity & Funding",
+      "description": "Short-term and structural liquidity, funding stability, and deposit structure.",
+      "order": 4
+    },
+    "efficiency": {
+      "label": "Efficiency & Operations",
+      "description": "Cost management, operational efficiency, and business scale indicators.",
+      "order": 5
+    },
+    "growth": {
+      "label": "Growth & Momentum",
+      "description": "Year-on-year changes in key balance sheet and income items.",
+      "order": 6
+    },
+    "valuation": {
+      "label": "Market Valuation",
+      "description": "Price multiples and market-based metrics. Often unavailable in regulatory filings.",
+      "order": 7
+    },
+    "balance_sheet_structure": {
+      "label": "Balance Sheet Structure",
+      "description": "Absolute scale and composition of assets, liabilities, and equity.",
+      "order": 8
+    }
+  },
+
+  "metrics": [
+    {
+      "name": "net_profit_margin",
+      "label": "Net Profit Margin",
+      "category": "profitability",
+      "type": "percentage",
+      "unit": "%",
+      "source": "computed",
+      "required": true,
+      "keywords": [
+        "net interest margin",
+        "attributable profit",
+        "profit attributable",
+        "total income",
+        "net operating income",
+        "cost to income ratio",
+        "净利润率",
+        "净利率"
+      ],
+      "description": "Net income (profit attributable to shareholders) divided by total operating income for the reporting period. Bank reports do NOT state this directly — compute attributable profit ÷ total income using figures you can cite. Do NOT confuse with 'net interest margin', which is a different metric."
+    },
+    {
+      "name": "roe",
+      "label": "Return on Equity (RoTE)",
+      "category": "profitability",
+      "type": "percentage",
+      "unit": "%",
+      "source": "stated_or_computed",
+      "required": true,
+      "keywords": [
+        "return on tangible equity",
+        "return on equity",
+        "RoTE",
+        "statutory return",
+        "weighted average return on net assets",
+        "净资产收益率",
+        "ROAE"
+      ],
+      "description": "Return on equity for the reporting period. Bank reports state 'return on tangible equity' (RoTE) or 'annualised weighted average return on net assets'. Report the stated figure when available. Do not confuse with return on risk-weighted assets (RoRWA)."
+    },
+    {
+      "name": "roaa",
+      "label": "Return on Average Assets",
+      "category": "profitability",
+      "type": "percentage",
+      "unit": "%",
+      "source": "stated_or_computed",
+      "required": false,
+      "keywords": [
+        "return on average assets",
+        "return on assets",
+        "ROAA",
+        "ROA",
+        "总资产收益率"
+      ],
+      "description": "Return on average assets for the reporting period. Often stated alongside ROE. If not stated, compute as net profit attributable to shareholders ÷ average total assets."
+    },
+    {
+      "name": "net_interest_margin",
+      "label": "Net Interest Margin",
+      "category": "profitability",
+      "type": "percentage",
+      "unit": "%",
+      "source": "stated",
+      "required": true,
+      "keywords": [
+        "net interest margin",
+        "NIM",
+        "净息差",
+        "net interest spread"
+      ],
+      "description": "Net interest income divided by average interest-earning assets. A core bank profitability driver. Reported directly in the management discussion. Do NOT confuse with net profit margin."
+    },
+    {
+      "name": "net_interest_spread",
+      "label": "Net Interest Spread",
+      "category": "profitability",
+      "type": "percentage",
+      "unit": "%",
+      "source": "stated",
+      "required": false,
+      "keywords": [
+        "net interest spread",
+        "NIS",
+        "净利差",
+        "yield on interest-earning",
+        "average cost ratio"
+      ],
+      "description": "Difference between the average yield on interest-earning assets and the average cost of interest-bearing liabilities. Often reported alongside NIM."
+    },
+    {
+      "name": "net_interest_income",
+      "label": "Net Interest Income",
+      "category": "profitability",
+      "type": "currency",
+      "unit": "reporting_currency",
+      "source": "stated",
+      "required": true,
+      "keywords": [
+        "net interest income",
+        "利息净收入",
+        "interest income",
+        "interest expense"
+      ],
+      "description": "Total interest income minus interest expense for the period. Core income driver for traditional banking."
+    },
+    {
+      "name": "net_fee_income",
+      "label": "Net Fee & Commission Income",
+      "category": "profitability",
+      "type": "currency",
+      "unit": "reporting_currency",
+      "source": "stated",
+      "required": false,
+      "keywords": [
+        "net fee and commission income",
+        "fee and commission income",
+        "手续费及佣金净收入",
+        "net non-interest income"
+      ],
+      "description": "Net fee and commission income. A key indicator of non-interest revenue diversification."
+    },
+    {
+      "name": "net_operating_income",
+      "label": "Net Operating Income",
+      "category": "profitability",
+      "type": "currency",
+      "unit": "reporting_currency",
+      "source": "stated",
+      "required": true,
+      "keywords": [
+        "net operating income",
+        "operating income",
+        "total income",
+        "营业收入",
+        "net revenue"
+      ],
+      "description": "Total net operating income (net interest income + net non-interest income) for the period."
+    },
+    {
+      "name": "profit_before_tax",
+      "label": "Profit Before Tax",
+      "category": "profitability",
+      "type": "currency",
+      "unit": "reporting_currency",
+      "source": "stated",
+      "required": false,
+      "keywords": [
+        "profit before tax",
+        "profit before taxation",
+        "税前利润",
+        "operating profit before impairment"
+      ],
+      "description": "Profit before income tax. Useful for cross-jurisdiction comparison before differing tax rates."
+    },
+    {
+      "name": "net_profit_attributable",
+      "label": "Net Profit Attributable to Shareholders",
+      "category": "profitability",
+      "type": "currency",
+      "unit": "reporting_currency",
+      "source": "stated",
+      "required": true,
+      "keywords": [
+        "profit attributable to shareholders",
+        "net profit attributable",
+        "attributable to equity holders",
+        "归属于股东的净利润",
+        "profit for the period"
+      ],
+      "description": "Net profit attributable to equity holders of the bank (after non-controlling interests). The bottom-line earnings figure."
+    },
+    {
+      "name": "basic_eps",
+      "label": "Basic Earnings Per Share",
+      "category": "profitability",
+      "type": "currency_per_share",
+      "unit": "reporting_currency",
+      "source": "stated",
+      "required": false,
+      "keywords": [
+        "basic earnings per share",
+        "basic EPS",
+        "earnings per share",
+        "每股收益",
+        "diluted earnings per share"
+      ],
+      "description": "Basic earnings per share attributable to ordinary shareholders. Report the stated figure."
+    },
+    {
+      "name": "pre_provision_operating_profit",
+      "label": "Pre-Provision Operating Profit",
+      "category": "profitability",
+      "type": "currency",
+      "unit": "reporting_currency",
+      "source": "computed",
+      "required": false,
+      "keywords": [
+        "operating profit before impairment",
+        "pre-provision",
+        "PPOP",
+        "operating profit before impairment losses",
+        "拨备前利润"
+      ],
+      "description": "Operating profit before impairment losses and taxation. Compute as operating income minus operating expenses. A key measure of underlying profitability before credit costs."
+    },
+    {
+      "name": "npl_ratio",
+      "label": "Non-Performing Loan Ratio",
+      "category": "asset_quality",
+      "type": "percentage",
+      "unit": "%",
+      "source": "stated",
+      "required": true,
+      "keywords": [
+        "non-performing loan ratio",
+        "NPL ratio",
+        "NPL%",
+        "不良贷款率",
+        "non-performing loans",
+        "impaired loans"
+      ],
+      "description": "Non-performing loans divided by total loans and advances. The primary headline asset quality metric."
+    },
+    {
+      "name": "npl_balance",
+      "label": "Non-Performing Loan Balance",
+      "category": "asset_quality",
+      "type": "currency",
+      "unit": "reporting_currency",
+      "source": "stated",
+      "required": false,
+      "keywords": [
+        "balance of non-performing loans",
+        "non-performing loans",
+        "NPL balance",
+        "不良贷款余额",
+        "impaired loans"
+      ],
+      "description": "Absolute balance of non-performing loans. Complements the NPL ratio for understanding scale."
+    },
+    {
+      "name": "allowance_coverage_ratio",
+      "label": "Allowance Coverage Ratio",
+      "category": "asset_quality",
+      "type": "percentage",
+      "unit": "%",
+      "source": "stated",
+      "required": false,
+      "keywords": [
+        "allowance coverage ratio",
+        "provision coverage ratio",
+        "coverage ratio",
+        "拨备覆盖率",
+        "allowances for impairment losses",
+        "loan loss reserves"
+      ],
+      "description": "Total loan loss allowances divided by non-performing loans. Measures the buffer against credit losses. Higher is more conservative."
+    },
+    {
+      "name": "allowance_to_loan_ratio",
+      "label": "Allowance-to-Loan Ratio",
+      "category": "asset_quality",
+      "type": "percentage",
+      "unit": "%",
+      "source": "stated",
+      "required": false,
+      "keywords": [
+        "allowance-to-loan ratio",
+        "allowance to loan",
+        "loan loss reserves ratio",
+        "拨贷比",
+        "provision to total loans"
+      ],
+      "description": "Total loan loss allowances divided by total loans. Measures overall provisioning level regardless of NPL classification."
+    },
+    {
+      "name": "credit_cost_ratio",
+      "label": "Credit Cost Ratio",
+      "category": "asset_quality",
+      "type": "percentage",
+      "unit": "%",
+      "source": "stated_or_computed",
+      "required": false,
+      "keywords": [
+        "credit cost",
+        "credit cost ratio",
+        "信贷成本",
+        "expected credit losses",
+        "impairment losses on loans"
+      ],
+      "description": "Expected credit losses (or loan impairment charges) divided by average loans, annualised. Measures the flow cost of credit risk."
+    },
+    {
+      "name": "npl_formation_ratio",
+      "label": "NPL Formation Ratio",
+      "category": "asset_quality",
+      "type": "percentage",
+      "unit": "%",
+      "source": "stated",
+      "required": false,
+      "keywords": [
+        "newly formed non-performing",
+        "NPL formation",
+        "NPL generation",
+        "不良贷款生成率",
+        "formation ratio"
+      ],
+      "description": "Newly formed non-performing loans during the period, annualised, divided by total loans. A forward-looking indicator of credit migration."
+    },
+    {
+      "name": "special_mentioned_loan_ratio",
+      "label": "Special-Mentioned Loan Ratio",
+      "category": "asset_quality",
+      "type": "percentage",
+      "unit": "%",
+      "source": "stated",
+      "required": false,
+      "keywords": [
+        "special-mentioned",
+        "special mentioned",
+        "special mention",
+        "关注类贷款",
+        "stage 2",
+        "SICR"
+      ],
+      "description": "Special-mentioned (watch-list) loans divided by total loans. An early-warning indicator — loans that may migrate to NPL."
+    },
+    {
+      "name": "overdue_loan_ratio",
+      "label": "Overdue Loan Ratio",
+      "category": "asset_quality",
+      "type": "percentage",
+      "unit": "%",
+      "source": "stated",
+      "required": false,
+      "keywords": [
+        "overdue loan ratio",
+        "overdue loans",
+        "逾期贷款率",
+        "past due"
+      ],
+      "description": "Overdue loans (past due but not yet classified as NPL) divided by total loans. A leading indicator of future NPLs."
+    },
+    {
+      "name": "cet1_ratio",
+      "label": "Common Equity Tier 1 Ratio",
+      "category": "capital_adequacy",
+      "type": "percentage",
+      "unit": "%",
+      "source": "stated",
+      "required": true,
+      "keywords": [
+        "common equity tier 1",
+        "CET1",
+        "CET 1",
+        "核心一级资本充足率",
+        "capital adequacy ratio"
+      ],
+      "description": "Common Equity Tier 1 capital divided by risk-weighted assets. The highest-quality regulatory capital ratio. Report the Advanced/IRB approach figure when available, otherwise the Standardised/Weighted approach."
+    },
+    {
+      "name": "tier1_ratio",
+      "label": "Tier 1 Capital Ratio",
+      "category": "capital_adequacy",
+      "type": "percentage",
+      "unit": "%",
+      "source": "stated",
+      "required": false,
+      "keywords": [
+        "tier 1 capital adequacy ratio",
+        "Tier 1",
+        "T1",
+        "一级资本充足率",
+        "net tier 1 capital"
+      ],
+      "description": "Tier 1 capital (CET1 + Additional Tier 1) divided by risk-weighted assets."
+    },
+    {
+      "name": "total_car",
+      "label": "Total Capital Adequacy Ratio",
+      "category": "capital_adequacy",
+      "type": "percentage",
+      "unit": "%",
+      "source": "stated",
+      "required": true,
+      "keywords": [
+        "capital adequacy ratio",
+        "total CAR",
+        "CAR",
+        "资本充足率",
+        "net capital"
+      ],
+      "description": "Total regulatory capital (Tier 1 + Tier 2) divided by risk-weighted assets. The broadest capital adequacy measure."
+    },
+    {
+      "name": "leverage_ratio",
+      "label": "Leverage Ratio",
+      "category": "capital_adequacy",
+      "type": "percentage",
+      "unit": "%",
+      "source": "stated",
+      "required": false,
+      "keywords": [
+        "leverage ratio",
+        "杠杆率",
+        "adjusted on- and off-balance sheet",
+        "net tier 1 capital"
+      ],
+      "description": "Tier 1 capital divided by total exposure (on- and off-balance sheet, unweighted). A non-risk-based backstop to risk-weighted capital ratios. Do NOT confuse with the equity multiplier (assets ÷ equity)."
+    },
+    {
+      "name": "equity_to_assets",
+      "label": "Equity-to-Assets Ratio",
+      "category": "capital_adequacy",
+      "type": "percentage",
+      "unit": "%",
+      "source": "computed",
+      "required": false,
+      "keywords": [
+        "total equity",
+        "total assets",
+        "equity attributable",
+        "shareholders equity",
+        "equity to assets"
+      ],
+      "description": "Total equity divided by total assets. Simple leverage measure. Compute as total equity ÷ total assets."
+    },
+    {
+      "name": "equity_multiplier",
+      "label": "Equity Multiplier",
+      "category": "capital_adequacy",
+      "type": "ratio",
+      "unit": "x",
+      "source": "computed",
+      "required": false,
+      "keywords": [
+        "total assets",
+        "total equity",
+        "shareholders equity",
+        "balance sheet commentary",
+        "权益乘数",
+        "杠杆率"
+      ],
+      "description": "Total assets divided by total shareholders' equity. A measure of leverage. IMPORTANT: do NOT return the regulatory 'leverage ratio' (Tier 1 capital ÷ exposure) — that is a different concept. Compute total assets ÷ total equity."
+    },
+    {
+      "name": "lcr",
+      "label": "Liquidity Coverage Ratio",
+      "category": "liquidity",
+      "type": "percentage",
+      "unit": "%",
+      "source": "stated",
+      "required": false,
+      "keywords": [
+        "liquidity coverage ratio",
+        "LCR",
+        "流动性覆盖率",
+        "high-quality liquid assets",
+        "net cash outflows"
+      ],
+      "description": "Stock of high-quality liquid assets divided by net cash outflows over a 30-day stress period. Regulatory minimum typically 100%."
+    },
+    {
+      "name": "nsfr",
+      "label": "Net Stable Funding Ratio",
+      "category": "liquidity",
+      "type": "percentage",
+      "unit": "%",
+      "source": "stated",
+      "required": false,
+      "keywords": [
+        "net stable funding ratio",
+        "NSFR",
+        "净稳定资金比率",
+        "available stable funding",
+        "required stable funding"
+      ],
+      "description": "Available stable funding divided by required stable funding over a one-year horizon. Measures structural funding stability."
+    },
+    {
+      "name": "loan_to_deposit_ratio",
+      "label": "Loan-to-Deposit Ratio",
+      "category": "liquidity",
+      "type": "percentage",
+      "unit": "%",
+      "source": "computed",
+      "required": false,
+      "keywords": [
+        "loan to deposit",
+        "loan-to-deposit",
+        "LDR",
+        "存贷比",
+        "loans and advances",
+        "deposits from customers"
+      ],
+      "description": "Total loans and advances to customers divided by total deposits from customers. A traditional liquidity measure. Compute as loans ÷ deposits."
+    },
+    {
+      "name": "deposit_to_liability_ratio",
+      "label": "Deposit-to-Liability Ratio",
+      "category": "liquidity",
+      "type": "percentage",
+      "unit": "%",
+      "source": "computed",
+      "required": false,
+      "keywords": [
+        "deposits from customers",
+        "total liabilities",
+        "deposit funding",
+        "customer deposits",
+        "存款占总负债"
+      ],
+      "description": "Customer deposits divided by total liabilities. Measures reliance on stable deposit funding versus wholesale funding. Compute as deposits ÷ total liabilities."
+    },
+    {
+      "name": "demand_deposit_ratio",
+      "label": "Demand Deposit Ratio",
+      "category": "liquidity",
+      "type": "percentage",
+      "unit": "%",
+      "source": "stated",
+      "required": false,
+      "keywords": [
+        "demand deposits",
+        "活期存款",
+        "current accounts",
+        "CASA",
+        "demand deposit ratio"
+      ],
+      "description": "Demand (current/savings) deposits divided by total deposits. Higher CASA ratio indicates cheaper, stickier funding. Report the stated figure when available."
+    },
+    {
+      "name": "cost_to_income_ratio",
+      "label": "Cost-to-Income Ratio",
+      "category": "efficiency",
+      "type": "percentage",
+      "unit": "%",
+      "source": "stated",
+      "required": true,
+      "keywords": [
+        "cost to income",
+        "cost-to-income",
+        "CIR",
+        "efficiency ratio",
+        "成本收入比",
+        "operating expenses"
+      ],
+      "description": "Operating expenses divided by operating income. The primary bank efficiency metric. Lower is better. Report the stated figure."
+    },
+    {
+      "name": "operating_expenses",
+      "label": "Operating Expenses",
+      "category": "efficiency",
+      "type": "currency",
+      "unit": "reporting_currency",
+      "source": "stated",
+      "required": false,
+      "keywords": [
+        "operating expenses",
+        "operating costs",
+        "营业费用",
+        "staff costs",
+        "other operating expenses"
+      ],
+      "description": "Total operating expenses (staff costs + other operating expenses) for the period."
+    },
+    {
+      "name": "asset_turnover",
+      "label": "Asset Turnover",
+      "category": "efficiency",
+      "type": "percentage",
+      "unit": "%",
+      "source": "computed",
+      "required": false,
+      "keywords": [
+        "total income",
+        "total assets",
+        "balance sheet commentary",
+        "资产周转率",
+        "营业收入"
+      ],
+      "description": "Total operating income divided by total assets. Bank reports do NOT state this directly — compute total income ÷ total assets. For sub-annual periods, note whether the figure is annualised."
+    },
+    {
+      "name": "yield_on_earning_assets",
+      "label": "Yield on Earning Assets",
+      "category": "efficiency",
+      "type": "percentage",
+      "unit": "%",
+      "source": "stated",
+      "required": false,
+      "keywords": [
+        "annualised average yield",
+        "yield on interest-earning",
+        "yield on earning assets",
+        "生息资产收益率",
+        "average yield"
+      ],
+      "description": "Average yield on interest-earning assets (loans, investments, interbank). Often reported in the NIM decomposition table. Report the total yield."
+    },
+    {
+      "name": "cost_of_funding",
+      "label": "Cost of Funding",
+      "category": "efficiency",
+      "type": "percentage",
+      "unit": "%",
+      "source": "stated",
+      "required": false,
+      "keywords": [
+        "annualised average cost",
+        "average cost ratio",
+        "cost of interest-bearing",
+        "cost of funding",
+        "计息负债成本率",
+        "average cost of liabilities"
+      ],
+      "description": "Average cost of interest-bearing liabilities (deposits, wholesale funding, debt). Often reported in the NIM decomposition table. Report the total cost."
+    },
+    {
+      "name": "loan_growth_yoy",
+      "label": "Loan Growth (YoY)",
+      "category": "growth",
+      "type": "percentage",
+      "unit": "%",
+      "source": "computed",
+      "required": false,
+      "keywords": [
+        "increase in loans",
+        "loan growth",
+        "贷款增长",
+        "loans and advances",
+        "compared to the corresponding period"
+      ],
+      "description": "Year-on-year growth rate of total loans and advances. If not directly stated, compute from current and prior-year loan balances."
+    },
+    {
+      "name": "deposit_growth_yoy",
+      "label": "Deposit Growth (YoY)",
+      "category": "growth",
+      "type": "percentage",
+      "unit": "%",
+      "source": "computed",
+      "required": false,
+      "keywords": [
+        "increase in deposits",
+        "deposit growth",
+        "存款增长",
+        "deposits from customers",
+        "compared to the corresponding period"
+      ],
+      "description": "Year-on-year growth rate of total customer deposits. If not directly stated, compute from current and prior-year deposit balances."
+    },
+    {
+      "name": "net_profit_growth_yoy",
+      "label": "Net Profit Growth (YoY)",
+      "category": "growth",
+      "type": "percentage",
+      "unit": "%",
+      "source": "stated_or_computed",
+      "required": false,
+      "keywords": [
+        "increase in net profit",
+        "profit growth",
+        "净利润增长",
+        "year-on-year increase",
+        "compared to the corresponding period"
+      ],
+      "description": "Year-on-year growth rate of net profit attributable to shareholders. Report the stated figure when available."
+    },
+    {
+      "name": "revenue_growth_yoy",
+      "label": "Revenue Growth (YoY)",
+      "category": "growth",
+      "type": "percentage",
+      "unit": "%",
+      "source": "stated_or_computed",
+      "required": false,
+      "keywords": [
+        "increase in operating income",
+        "revenue growth",
+        "net operating income",
+        "营业收入增长",
+        "year-on-year increase"
+      ],
+      "description": "Year-on-year growth rate of net operating income. Report the stated figure when available."
+    },
+    {
+      "name": "pe",
+      "label": "Price-to-Earnings Ratio",
+      "category": "valuation",
+      "type": "ratio",
+      "unit": "x",
+      "source": "market_data",
+      "required": false,
+      "keywords": [
+        "price to earnings",
+        "price-to-earnings",
+        "earnings per share",
+        "diluted earnings per share",
+        "市盈率",
+        "P/E"
+      ],
+      "description": "Market price per share divided by earnings per share. The report states EPS but not the market price — return an error if the ratio is not stated in the report."
+    },
+    {
+      "name": "pb",
+      "label": "Price-to-Book Ratio",
+      "category": "valuation",
+      "type": "ratio",
+      "unit": "x",
+      "source": "market_data",
+      "required": false,
+      "keywords": [
+        "price to book",
+        "price-to-book",
+        "tangible net asset value per share",
+        "TNAV per share",
+        "book value per share",
+        "市净率",
+        "P/B",
+        "net assets per share"
+      ],
+      "description": "Market price per share divided by book value per share (net assets per share or TNAV per share) at period end. The report may state the book-value component but not the market price — return an error if the ratio is not stated."
+    },
+    {
+      "name": "dividend_per_share",
+      "label": "Dividend Per Share",
+      "category": "valuation",
+      "type": "currency_per_share",
+      "unit": "reporting_currency",
+      "source": "stated",
+      "required": false,
+      "keywords": [
+        "dividend per share",
+        "DPS",
+        "每股股息",
+        "dividend",
+        "proposed dividend",
+        "final dividend",
+        "interim dividend",
+        "profit appropriation"
+      ],
+      "description": "Total dividend per share declared/proposed for the period. Often only available in annual reports. Return the stated figure."
+    },
+    {
+      "name": "dividend_payout_ratio",
+      "label": "Dividend Payout Ratio",
+      "category": "valuation",
+      "type": "percentage",
+      "unit": "%",
+      "source": "stated_or_computed",
+      "required": false,
+      "keywords": [
+        "dividend payout",
+        "payout ratio",
+        "派息率",
+        "dividend distribution",
+        "profit distribution"
+      ],
+      "description": "Total dividends divided by net profit attributable to shareholders. Report the stated figure when available, otherwise compute DPS ÷ EPS."
+    },
+    {
+      "name": "net_assets_per_share",
+      "label": "Net Assets Per Share",
+      "category": "valuation",
+      "type": "currency_per_share",
+      "unit": "reporting_currency",
+      "source": "stated",
+      "required": false,
+      "keywords": [
+        "net assets per share",
+        "book value per share",
+        "NAV per share",
+        "每股净资产",
+        "total equity attributable"
+      ],
+      "description": "Equity attributable to ordinary shareholders divided by number of ordinary shares. The denominator for P/B. Report the stated figure."
+    },
+    {
+      "name": "total_assets",
+      "label": "Total Assets",
+      "category": "balance_sheet_structure",
+      "type": "currency",
+      "unit": "reporting_currency",
+      "source": "stated",
+      "required": true,
+      "keywords": [
+        "total assets",
+        "总资产",
+        "statement of financial position",
+        "balance sheet"
+      ],
+      "description": "Total assets as reported on the balance sheet at period end."
+    },
+    {
+      "name": "total_loans",
+      "label": "Total Loans & Advances",
+      "category": "balance_sheet_structure",
+      "type": "currency",
+      "unit": "reporting_currency",
+      "source": "stated",
+      "required": true,
+      "keywords": [
+        "loans and advances to customers",
+        "total loans",
+        "贷款及垫款",
+        "customer loans",
+        "statement of financial position"
+      ],
+      "description": "Total loans and advances to customers (gross of allowances) at period end. Use the Group figure when available."
+    },
+    {
+      "name": "total_deposits",
+      "label": "Total Deposits from Customers",
+      "category": "balance_sheet_structure",
+      "type": "currency",
+      "unit": "reporting_currency",
+      "source": "stated",
+      "required": true,
+      "keywords": [
+        "deposits from customers",
+        "total deposits",
+        "客户存款",
+        "customer deposits",
+        "statement of financial position"
+      ],
+      "description": "Total deposits from customers at period end. Use the Group figure when available."
+    },
+    {
+      "name": "total_equity",
+      "label": "Total Equity",
+      "category": "balance_sheet_structure",
+      "type": "currency",
+      "unit": "reporting_currency",
+      "source": "stated",
+      "required": true,
+      "keywords": [
+        "total equity",
+        "shareholders equity",
+        "权益总额",
+        "equity attributable",
+        "statement of financial position"
+      ],
+      "description": "Total equity (including non-controlling interests) at period end."
+    },
+    {
+      "name": "total_liabilities",
+      "label": "Total Liabilities",
+      "category": "balance_sheet_structure",
+      "type": "currency",
+      "unit": "reporting_currency",
+      "source": "stated",
+      "required": false,
+      "keywords": [
+        "total liabilities",
+        "负债总额",
+        "statement of financial position"
+      ],
+      "description": "Total liabilities at period end."
+    },
+    {
+      "name": "loan_to_asset_ratio",
+      "label": "Loan-to-Asset Ratio",
+      "category": "balance_sheet_structure",
+      "type": "percentage",
+      "unit": "%",
+      "source": "computed",
+      "required": false,
+      "keywords": [
+        "loans accounted for",
+        "loans to total assets",
+        "loan-to-asset",
+        "贷款占总资产",
+        "percentage of the total"
+      ],
+      "description": "Total loans and advances divided by total assets. Measures the proportion of assets deployed as loans. Compute as loans ÷ total assets."
+    },
+    {
+      "name": "retail_loan_ratio",
+      "label": "Retail Loan Ratio",
+      "category": "balance_sheet_structure",
+      "type": "percentage",
+      "unit": "%",
+      "source": "stated_or_computed",
+      "required": false,
+      "keywords": [
+        "retail loans",
+        "personal loans",
+        "零售贷款",
+        "corporate loans",
+        "loan distribution"
+      ],
+      "description": "Retail (personal) loans divided by total loans. Measures the retail vs. corporate loan mix."
+    },
+    {
+      "name": "financial_investments",
+      "label": "Financial Investments",
+      "category": "balance_sheet_structure",
+      "type": "currency",
+      "unit": "reporting_currency",
+      "source": "stated",
+      "required": false,
+      "keywords": [
+        "financial investments",
+        "debt investments",
+        "金融投资",
+        "investment securities",
+        "FVOCI",
+        "amortised cost"
+      ],
+      "description": "Total financial investments (FVTPL + FVOCI + amortised cost) at period end. Sum across all investment categories."
+    },
+    {
+      "name": "rwa",
+      "label": "Risk-Weighted Assets",
+      "category": "balance_sheet_structure",
+      "type": "currency",
+      "unit": "reporting_currency",
+      "source": "stated",
+      "required": false,
+      "keywords": [
+        "risk-weighted assets",
+        "RWA",
+        "风险加权资产",
+        "risk weighted",
+        "capital adequacy"
+      ],
+      "description": "Total risk-weighted assets. Can be derived from CET1 capital ÷ CET1 ratio. Report the stated figure when available."
+    },
+    {
+      "name": "rwa_density",
+      "label": "RWA Density",
+      "category": "balance_sheet_structure",
+      "type": "percentage",
+      "unit": "%",
+      "source": "computed",
+      "required": false,
+      "keywords": [
+        "risk-weighted assets",
+        "total assets",
+        "RWA density",
+        "RWA to total assets"
+      ],
+      "description": "Risk-weighted assets divided by total assets. Measures the average risk weight of the bank's asset portfolio. Compute as RWA ÷ total assets."
+    }
+  ]
+}
