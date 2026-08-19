@@ -178,18 +178,23 @@ def _default_parse_workers() -> int:
 
 
 def _parse_one(
-    store: ReportStore, bank: BankSpec, year: int, force: bool
+    store: ReportStore,
+    bank: BankSpec,
+    year: int,
+    report_type: str,
+    period: str,
+    force: bool,
 ) -> tuple[bool, str]:
     """Parse one bank's raw PDF into processed markdown.
 
     Returns (ok, message). Skips when the processed file exists unless
     force is set.
     """
-    pdf_path = store.raw_path(year, bank.ticker_safe, "annual_report", "FY")
+    pdf_path = store.raw_path(year, bank.ticker_safe, report_type, period)
     if not pdf_path.exists():
         return False, f"report not downloaded ({pdf_path})"
 
-    md_path = store.processed_path(year, bank.ticker_safe, "annual_report", "FY")
+    md_path = store.processed_path(year, bank.ticker_safe, report_type, period)
     if md_path.exists() and not force:
         return True, f"already parsed ({md_path})"
 
@@ -202,7 +207,12 @@ def _parse_one(
 @parse_app.command(name="bank")
 def parse_bank(
     ticker: str = typer.Argument(..., help="Bank ticker (e.g. BARC.L, 601398.SH)"),
+    report_type: str = typer.Option(
+        "annual_report", "--type", "-t",
+        help="Report type: annual_report, 10-K, 10-Q, interim_report, quarterly_report, pillar3",
+    ),
     year: int = typer.Option(2025, "--year", "-y", help="Fiscal year"),
+    period: str = typer.Option("FY", "--period", "-p", help="Period: FY, Q1-Q4, H1, H2"),
     data_dir: Path = typer.Option(
         DEFAULT_DATA_DIR, "--data-dir", "-d",
         help="Base data directory (default: ~/.noobanks/data)",
@@ -211,24 +221,29 @@ def parse_bank(
         False, "--force", "-f", help="Re-parse even if already processed",
     ),
 ) -> None:
-    """Convert a downloaded annual-report PDF into processed markdown."""
+    """Convert a downloaded report PDF into processed markdown."""
     registry = load_bank_registry()
     bank = registry.find(ticker)
     if bank is None:
         console.print(f"[red]Bank not found:[/red] {ticker}")
         raise typer.Exit(1)
 
-    ok, message = _parse_one(ReportStore(data_dir), bank, year, force)
+    ok, message = _parse_one(ReportStore(data_dir), bank, year, report_type, period, force)
     if not ok:
         console.print(f"[red]✗[/red] {bank.ticker}: {message}")
         raise typer.Exit(1)
-    console.print(f"Parsing [bold]{bank.name}[/bold] FY{year}...")
+    console.print(f"Parsing [bold]{bank.name}[/bold] {_period_label(report_type, period)} {year}...")
     console.print(f"  [green]✓[/green] {message}")
 
 
 @parse_app.command(name="all")
 def parse_all(
+    report_type: str = typer.Option(
+        "annual_report", "--type", "-t",
+        help="Report type: annual_report, 10-K, 10-Q, interim_report, quarterly_report, pillar3",
+    ),
     year: int = typer.Option(2025, "--year", "-y", help="Fiscal year"),
+    period: str = typer.Option("FY", "--period", "-p", help="Period: FY, Q1-Q4, H1, H2"),
     data_dir: Path = typer.Option(
         DEFAULT_DATA_DIR, "--data-dir", "-d",
         help="Base data directory (default: ~/.noobanks/data)",
@@ -251,14 +266,15 @@ def parse_all(
     workers = max_workers or _default_parse_workers()
 
     console.print(
-        f"Parsing {len(banks)} banks for FY{year} (up to {workers} in parallel)..."
+        f"Parsing {len(banks)} banks for {_period_label(report_type, period)} {year} "
+        f"(up to {workers} in parallel)..."
     )
     parsed, skipped, failed = [], [], []
 
     # CPU-bound work (pymupdf4llm) — run in a process pool.
     with ProcessPoolExecutor(max_workers=workers) as executor:
         futures = {
-            executor.submit(_parse_one, store, bank, year, force): bank
+            executor.submit(_parse_one, store, bank, year, report_type, period, force): bank
             for bank in banks
         }
         for future in as_completed(futures):
