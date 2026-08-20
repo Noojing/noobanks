@@ -90,6 +90,18 @@ REPORT_TYPE_SCORE_KEYWORDS: dict[str, list[str]] = {
     "pillar3": ["pillar 3", "pillar-3", "pillar3", "pillar_3", "第三支柱"],
 }
 
+# Period keywords for candidate scoring. Used by _url_score to reward
+# candidates whose URL or link text matches the target period.
+PERIOD_SCORE_KEYWORDS: dict[str, list[str]] = {
+    "FY": ["fy", "full year", "full-year", "annual", "yearly", "年报", "年度报告"],
+    "Q1": ["q1", "quarter 1", "1st quarter", "first quarter", "一季度", "第1季度"],
+    "Q2": ["q2", "quarter 2", "2nd quarter", "second quarter", "二季度", "第2季度"],
+    "Q3": ["q3", "quarter 3", "3rd quarter", "third quarter", "三季度", "第3季度"],
+    "Q4": ["q4", "quarter 4", "4th quarter", "fourth quarter", "四季度", "第4季度"],
+    "H1": ["h1", "half-year 1", "first half", "上半年", "半年报", "中期报告"],
+    "H2": ["h2", "half-year 2", "second half", "下半年"],
+}
+
 # Filenames that signal a non-report document (results announcements,
 # circulars, notices, Q&A records, briefing slides). Penalized in
 # _url_score's text-aware branch — these commonly co-exist with real
@@ -215,7 +227,7 @@ class GenericIrAdapter(SourceAdapter):
             )
             return result
 
-        urls = await self.discover_urls(bank, report_type, year)
+        urls = await self.discover_urls(bank, report_type, year, period)
         if not urls:
             result.errors.append(
                 f"No PDF URLs found for {bank.ticker} {report_type} {year}"
@@ -261,7 +273,8 @@ class GenericIrAdapter(SourceAdapter):
         return result
 
     async def discover_urls(
-        self, bank: BankSpec, report_type: str, year: int
+        self, bank: BankSpec, report_type: str, year: int,
+        period: str = "FY",
     ) -> list[str]:
         """Discover PDF URLs by crawling from the IR landing page.
 
@@ -270,6 +283,9 @@ class GenericIrAdapter(SourceAdapter):
         2. BFS crawl from the IR landing page, following report-related
            navigation links to find pages with PDF downloads
         3. Fall back to per-market URL construction heuristics if crawl fails
+
+        Scoring considers year, report type, and period (Q1/Q2/Q3/Q4/H1/H2)
+        to rank candidates by relevance.
         """
         ir_base = bank.sources.investor_relations.rstrip("/")
         candidates: dict[str, str] = {}  # url -> link_text
@@ -294,11 +310,12 @@ class GenericIrAdapter(SourceAdapter):
                     candidates[url] = text
 
         # 3. Deduplicate and sort (prefer PDFs with year in name,
-        #    boosted by link text and report-type relevance)
+        #    boosted by link text, report-type, and period relevance)
         candidates_list = sorted(
             candidates,
             key=lambda u: self._url_score(
-                u, year_str, link_text=candidates[u], report_type=report_type
+                u, year_str, link_text=candidates[u],
+                report_type=report_type, period=period,
             ),
             reverse=True,
         )
@@ -318,7 +335,8 @@ class GenericIrAdapter(SourceAdapter):
                 for url, _ in sorted(
                     browser_links,
                     key=lambda ut: self._url_score(
-                        ut[0], year_str, link_text=ut[1], report_type=report_type
+                        ut[0], year_str, link_text=ut[1],
+                        report_type=report_type, period=period,
                     ),
                     reverse=True,
                 )
@@ -343,7 +361,7 @@ class GenericIrAdapter(SourceAdapter):
             )
             candidates_list = sorted(
                 search_results,
-                key=lambda u: self._url_score(u, year_str),
+                key=lambda u: self._url_score(u, year_str, period=period),
                 reverse=True,
             )
 
@@ -964,6 +982,7 @@ class GenericIrAdapter(SourceAdapter):
         year_str: str,
         link_text: Optional[str] = None,
         report_type: Optional[str] = None,
+        period: Optional[str] = None,
     ) -> int:
         """Score a candidate for relevance (higher = better match).
 
@@ -972,7 +991,8 @@ class GenericIrAdapter(SourceAdapter):
         — what a human reads on the page — is weighted above the URL, and
         keywords of the requested report type add points while keywords of
         other report types (e.g. "interim" when fetching an annual report)
-        subtract them.
+        subtract them. Period scoring (Q1/Q2/Q3/Q4/H1/H2) rewards candidates
+        whose URL or link text matches the target period.
         """
         url_lower = url.lower()
         text_lower = (link_text or "").lower()
@@ -988,12 +1008,21 @@ class GenericIrAdapter(SourceAdapter):
                 score += 1
             if "cdn" not in url_lower and "static" not in url_lower:
                 score += 1
+            if period and period in PERIOD_SCORE_KEYWORDS:
+                target_keywords = PERIOD_SCORE_KEYWORDS[period]
+                if any(kw in url_lower for kw in target_keywords):
+                    score += 3
+                for other_period, keywords in PERIOD_SCORE_KEYWORDS.items():
+                    if other_period == period:
+                        continue
+                    if any(kw in url_lower for kw in keywords):
+                        score -= 2
             return score
 
         score = 0
         # Year: anchor text is the stronger signal
         if year_str in text_lower:
-            score += 6
+            score += 4
         elif year_str in url_lower:
             score += 3
 
@@ -1004,14 +1033,33 @@ class GenericIrAdapter(SourceAdapter):
                 hit_in_url = any(kw in url_lower for kw in keywords)
                 if other_type == report_type:
                     if hit_in_text:
-                        score += 5
-                    elif hit_in_url:
                         score += 4
+                    elif hit_in_url:
+                        score += 3
                 else:
                     if hit_in_text:
-                        score -= 4
-                    elif hit_in_url:
                         score -= 3
+                    elif hit_in_url:
+                        score -= 2
+
+        # Period: reward the requested period, penalize other periods
+        if period and period in PERIOD_SCORE_KEYWORDS:
+            target_keywords = PERIOD_SCORE_KEYWORDS[period]
+            target_hit_text = any(kw in text_lower for kw in target_keywords)
+            target_hit_url = any(kw in url_lower for kw in target_keywords)
+            if target_hit_text:
+                score += 4
+            elif target_hit_url:
+                score += 3
+            for other_period, keywords in PERIOD_SCORE_KEYWORDS.items():
+                if other_period == period:
+                    continue
+                hit_in_text = any(kw in text_lower for kw in keywords)
+                hit_in_url = any(kw in url_lower for kw in keywords)
+                if hit_in_text:
+                    score -= 3
+                elif hit_in_url:
+                    score -= 2
 
         # Non-report documents (announcements etc.) rank below real reports
         if any(kw in text_lower for kw in NON_REPORT_SCORE_KEYWORDS):

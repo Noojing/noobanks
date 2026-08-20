@@ -975,7 +975,7 @@ class TestUrlScoreTextAware:
             "https://example.com/2024/annualresults.pdf", "2024",
             link_text="2024 Annual Report", report_type="annual_report",
         )
-        assert score > 8  # +6 year-text, +5 annual-text, −2 url penalty, +1 non-cdn
+        assert score > 5  # +4 year-text, +4 annual-text, −2 url penalty, +1 non-cdn
 
     def test_extract_pdf_links_with_text_returns_pairs(self):
         """with_text=True returns (url, anchor_text) pairs; default is strings."""

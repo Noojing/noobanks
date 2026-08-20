@@ -90,7 +90,8 @@ class SourceAdapter(ABC):
 
     @abstractmethod
     async def discover_urls(
-        self, bank: BankSpec, report_type: str, year: int
+        self, bank: BankSpec, report_type: str, year: int,
+        period: str = "FY",
     ) -> list[str]:
         """Discover candidate PDF URLs for the given bank/report/year.
 
@@ -98,6 +99,7 @@ class SourceAdapter(ABC):
             bank: Bank specification.
             report_type: Type of report to find.
             year: Target fiscal year.
+            period: Target period (FY, Q1-Q4, H1, H2).
 
         Returns:
             List of candidate PDF URLs (unverified).
