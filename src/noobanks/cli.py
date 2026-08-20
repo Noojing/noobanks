@@ -82,7 +82,7 @@ def fetch_bank(
     ticker: str = typer.Argument(..., help="Bank ticker (e.g. BARC.L, JPM, 601398.SH)"),
     report_type: str = typer.Option(
         "annual_report", "--type", "-t",
-        help="Report type: annual_report, 10-K, 10-Q, interim_report, quarterly_report, pillar3",
+        help="Report type: annual_report, 10-K, 10-Q, 8-K, 6-K, interim_report, quarterly_report, pillar3",
     ),
     year: int = typer.Option(2025, "--year", "-y", help="Fiscal year of the report"),
     period: str = typer.Option("FY", "--period", "-p", help="Period: FY, Q1-Q4, H1, H2"),
@@ -209,7 +209,7 @@ def parse_bank(
     ticker: str = typer.Argument(..., help="Bank ticker (e.g. BARC.L, 601398.SH)"),
     report_type: str = typer.Option(
         "annual_report", "--type", "-t",
-        help="Report type: annual_report, 10-K, 10-Q, interim_report, quarterly_report, pillar3",
+        help="Report type: annual_report, 10-K, 10-Q, 8-K, 6-K, interim_report, quarterly_report, pillar3",
     ),
     year: int = typer.Option(2025, "--year", "-y", help="Fiscal year"),
     period: str = typer.Option("FY", "--period", "-p", help="Period: FY, Q1-Q4, H1, H2"),
@@ -240,7 +240,7 @@ def parse_bank(
 def parse_all(
     report_type: str = typer.Option(
         "annual_report", "--type", "-t",
-        help="Report type: annual_report, 10-K, 10-Q, interim_report, quarterly_report, pillar3",
+        help="Report type: annual_report, 10-K, 10-Q, 8-K, 6-K, interim_report, quarterly_report, pillar3",
     ),
     year: int = typer.Option(2025, "--year", "-y", help="Fiscal year"),
     period: str = typer.Option("FY", "--period", "-p", help="Period: FY, Q1-Q4, H1, H2"),

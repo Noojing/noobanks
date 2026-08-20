@@ -205,8 +205,8 @@ banks:
     exchange: LSE
     market: UK
     sources:
-      investor_relations: https://home.barclays/investor-relations
-    filings: [annual_report, interim_report, quarterly_report]
+      investor_relations: https://home.barclays/investor-relations/reports-and-events
+    filings: [annual_report, interim_report, quarterly_report, 6-K]
 
   - name: Lloyds Banking Group plc
     ticker: LLOY.L

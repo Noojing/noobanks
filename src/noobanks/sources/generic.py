@@ -45,6 +45,7 @@ REPORT_PATTERNS: dict[str, list[str]] = {
     "10-K": ["10-k", "10k", "form-10-k", "form 10-k"],
     "10-Q": ["10-q", "10q", "form-10-q", "form 10-q"],
     "8-K": ["8-k", "8k", "form-8-k", "form 8-k"],
+    "6-K": ["6-k", "6k", "form-6-k", "form 6-k"],
     "pillar3": ["pillar.3", "pillar-3", "pillar3", "pillar_3", "第三支柱"],
 }
 
@@ -55,6 +56,7 @@ REPORT_TYPE_LABELS: dict[str, str] = {
     "10-K": "10-K annual report 10-K 年报",
     "10-Q": "10-Q quarterly report 10-Q 季度报告",
     "8-K": "8-K current report 8-K 当期报告",
+    "6-K": "6-K current report 6-K 当期报告",
     "interim_report": "interim report 中期报告 半年报",
     "quarterly_report": "quarterly report 季度报告 季报",
     "pillar3": "pillar 3 disclosures 第三支柱",
@@ -84,6 +86,7 @@ REPORT_TYPE_SCORE_KEYWORDS: dict[str, list[str]] = {
     "10-K": ["10-k", "10k"],
     "10-Q": ["10-q", "10q"],
     "8-K": ["8-k", "8k"],
+    "6-K": ["6-k", "6k"],
     "pillar3": ["pillar 3", "pillar-3", "pillar3", "pillar_3", "第三支柱"],
 }
 
