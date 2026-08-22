@@ -1,6 +1,11 @@
 """Data sourcing layer — adapters for fetching bank financial reports."""
 
-from noobanks.sources.base import SourceAdapter, Report, FetchResult
-from noobanks.sources.generic import GenericIrAdapter
+from noobanks.sources.base import FetchResult, Report, SourceAdapter
+from noobanks.sources.composite_adapter import CompositeAdapter
 
-__all__ = ["SourceAdapter", "Report", "FetchResult", "GenericIrAdapter"]
+__all__ = [
+    "SourceAdapter",
+    "Report",
+    "FetchResult",
+    "CompositeAdapter",
+]

@@ -22,7 +22,7 @@ from noobanks.processing.parser import (
     markdown_to_pages,
     parse_to_markdown,
 )
-from noobanks.sources.generic import GenericIrAdapter
+from noobanks.sources import CompositeAdapter
 from noobanks.storage import ReportStore
 from noobanks.storage.store import DEFAULT_DATA_DIR
 
@@ -104,18 +104,16 @@ def fetch_bank(
                   f"{_period_label(report_type, period)} {year}")
 
     ReportStore(data_dir).ensure_dirs()
-    adapter = GenericIrAdapter(data_dir=data_dir)
+    adapter = CompositeAdapter(data_dir=data_dir)
     result = _run_async(adapter.fetch(bank, report_type, year, period, force=force))
 
-    if result.reports:
-        for r in result.reports:
-            console.print(
-                f"  [green]✓[/green] {r.filename} ({r.size_mb:.1f} MB) → {r.local_path}"
-            )
-    if result.errors:
-        for e in result.errors:
-            console.print(f"  [red]✗[/red] {e}")
-    if not result.reports and not result.errors:
+    if result.report:
+        console.print(
+            f"  [green]✓[/green] {result.report.filename} ({result.report.size_mb:.1f} MB) → {result.report.local_path}"
+        )
+    if result.error:
+        console.print(f"  [red]✗[/red] {result.error}")
+    if not result.report and not result.error:
         console.print("  [yellow]No results[/yellow]")
 
 
@@ -143,21 +141,19 @@ def fetch_all(
     console.print(f"Fetching [bold]{_period_label(report_type, period)} {year}[/bold] "
                   f"for {len(banks)} banks...")
     ReportStore(data_dir).ensure_dirs()
-    adapter = GenericIrAdapter(data_dir=data_dir)
+    adapter = CompositeAdapter(data_dir=data_dir)
 
     async def _fetch_all():
         succeeded, failed = [], []
         for i, bank in enumerate(banks):
             console.print(f"  [{i+1}/{len(banks)}] {bank.ticker} ({bank.name})...")
             result = await adapter.fetch(bank, report_type, year, period, force=force)
-            if result.reports:
+            if result.report:
                 succeeded.append(result)
-                for r in result.reports:
-                    console.print(f"    [green]✓[/green] {r.filename} ({r.size_mb:.1f} MB)")
+                console.print(f"    [green]✓[/green] {result.report.filename} ({result.report.size_mb:.1f} MB)")
             else:
                 failed.append(result)
-                for e in result.errors:
-                    console.print(f"    [red]✗[/red] {e}")
+                console.print(f"    [red]✗[/red] {result.error}")
             if i < len(banks) - 1:
                 await asyncio.sleep(2)  # inter-bank cooldown
         return succeeded, failed

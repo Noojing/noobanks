@@ -95,13 +95,13 @@ class TestFetchResult:
             local_path=Path("/tmp/test.pdf"),
             url="https://example.com/report.pdf",
         )
-        fr = FetchResult(bank=sample_bank_spec, reports=[r])
+        fr = FetchResult(bank=sample_bank_spec, report=r)
         assert fr.succeeded == 1
         assert fr.failed == 0
         assert fr.ok is True
 
     def test_with_errors(self, sample_bank_spec: BankSpec):
-        fr = FetchResult(bank=sample_bank_spec, errors=["404 Not Found"])
+        fr = FetchResult(bank=sample_bank_spec, error="404 Not Found")
         assert fr.succeeded == 0
         assert fr.failed == 1
         assert fr.ok is False  # no reports, has errors
@@ -118,8 +118,8 @@ class TestFetchResult:
         )
         fr = FetchResult(
             bank=sample_bank_spec,
-            reports=[r],
-            errors=["Minor warning"],
+            report=r,
+            error="Minor warning",
         )
         assert fr.succeeded == 1
         assert fr.failed == 1
