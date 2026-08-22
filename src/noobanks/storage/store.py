@@ -40,10 +40,6 @@ class ReportStore:
             / f"{ticker_safe}_{report_type}_{period}.md"
         )
 
-    def output_path(self, ticker_safe: str, period: str) -> Path:
-        """Path for structured metrics output JSON."""
-        return self.output_dir / ticker_safe / period / "metrics.json"
-
     def output_jsonl_path(self, year: int) -> Path:
         """Path for the per-year metrics JSONL (one record per line,
         across all banks)."""

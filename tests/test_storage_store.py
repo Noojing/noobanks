@@ -23,11 +23,6 @@ class TestReportStorePaths:
         path = store.processed_path(2025, "BARC_L", "annual_report", "FY")
         assert path == tmp_data_dir / "processed" / "2025" / "BARC_L_annual_report_FY.md"
 
-    def test_output_path(self, tmp_data_dir: Path):
-        store = ReportStore(tmp_data_dir)
-        path = store.output_path("BARC_L", "FY")
-        assert path == tmp_data_dir / "output" / "BARC_L" / "FY" / "metrics.json"
-
     def test_default_base_dir(self):
         store = ReportStore()
         assert store.base_dir == DEFAULT_DATA_DIR
