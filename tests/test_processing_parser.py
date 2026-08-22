@@ -4,34 +4,6 @@ from pathlib import Path
 
 import pytest
 
-from noobanks.processing.parser import DocumentParser, PageText
-
-
-class TestDocumentParser:
-    def test_parse_returns_pages(self, tmp_pdf: Path):
-        parser = DocumentParser()
-        pages = parser.parse(tmp_pdf)
-        assert isinstance(pages, list)
-        assert len(pages) >= 1
-        assert all(isinstance(p, PageText) for p in pages)
-
-    def test_page_numbers_are_sequential(self, tmp_pdf: Path):
-        parser = DocumentParser()
-        pages = parser.parse(tmp_pdf)
-        assert [p.page_no for p in pages] == list(range(1, len(pages) + 1))
-
-    def test_parse_missing_file_raises(self, tmp_path: Path):
-        parser = DocumentParser()
-        with pytest.raises(ValueError, match="not found"):
-            parser.parse(tmp_path / "does_not_exist.pdf")
-
-    def test_parse_non_pdf_raises(self, tmp_path: Path):
-        parser = DocumentParser()
-        bad = tmp_path / "not_a_pdf.pdf"
-        bad.write_bytes(b"this is not a pdf at all")
-        with pytest.raises(ValueError, match="PDF"):
-            parser.parse(bad)
-
 
 from noobanks.processing.parser import (
     markdown_to_pages,

@@ -7,10 +7,16 @@ from typing import Any
 
 from noobanks.config.models import MetricSpec
 from noobanks.extraction.llm import LlmClient
-from noobanks.processing.parser import MAX_CHARS_PER_PAGE, PageText
+from noobanks.processing.parser import PageText
 from noobanks.processing.scorer import PageScorer
 
 logger = logging.getLogger(__name__)
+
+# Deterministic cap on characters sent per page to the LLM — keeps token
+# usage bounded regardless of page size (bank reports can have huge
+# appendix pages). Truncation happens at a paragraph boundary when
+# possible.
+MAX_CHARS_PER_PAGE = 10_000
 
 # Fixed output shape for every metric extraction.
 # No field is ever null: unavailable fields are simply omitted. Every

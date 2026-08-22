@@ -1,4 +1,4 @@
-"""DocumentParser — PDF → markdown conversion and page chunking.
+"""PDF → markdown conversion and page chunking.
 
 The parser runs as a standalone process: it converts raw PDFs into
 markdown files (with `<!-- page N -->` markers) stored under the
@@ -15,12 +15,6 @@ import pymupdf
 
 # Marker emitted between pages in processed markdown files.
 PAGE_MARKER_RE = re.compile(r"<!-- page (\d+) -->")
-
-# Deterministic cap on characters sent per page to the LLM — keeps token
-# usage bounded regardless of page size (bank reports can have huge
-# appendix pages). Truncation happens at a paragraph boundary when
-# possible.
-MAX_CHARS_PER_PAGE = 10_000
 
 
 @dataclass
@@ -116,42 +110,3 @@ def markdown_to_pages(markdown: str) -> list[PageText]:
         if text:
             pages.append(PageText(page_no=page_no, text=text))
     return pages
-
-
-class DocumentParser:
-    """Extract per-page text from PDF documents using pymupdf.
-
-    Used for quick raw-text access (e.g. tests and page counting). For
-    markdown conversion use parse_to_markdown.
-    """
-
-    def parse(self, pdf_path: str | Path) -> list[PageText]:
-        """Parse a PDF into per-page text.
-
-        Args:
-            pdf_path: Path to a PDF file.
-
-        Returns:
-            List of PageText, one per page, in document order.
-
-        Raises:
-            ValueError: If the file is missing or is not a valid PDF.
-        """
-        path = Path(pdf_path)
-        if not path.exists():
-            raise ValueError(f"PDF not found: {path}")
-
-        try:
-            doc = pymupdf.open(str(path))
-        except Exception as exc:
-            raise ValueError(f"Not a valid PDF: {path}") from exc
-
-        pages: list[PageText] = []
-        try:
-            for i, page in enumerate(doc):
-                text = page.get_text().strip()
-                pages.append(PageText(page_no=i + 1, text=text))
-        finally:
-            doc.close()
-
-        return pages
