@@ -11,12 +11,7 @@ from noobanks.config.models import BankRegistry, BankSpec, SourceConfig
 class TestSourceConfig:
     def test_minimal_source_config(self):
         sc = SourceConfig(investor_relations="https://example.com/ir")
-        assert sc.edgar is False
         assert sc.investor_relations == "https://example.com/ir"
-
-    def test_with_edgar(self):
-        sc = SourceConfig(edgar=True, investor_relations="https://example.com/ir")
-        assert sc.edgar is True
 
     def test_missing_investor_relations_raises(self):
         with pytest.raises(ValidationError):

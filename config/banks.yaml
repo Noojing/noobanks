@@ -3,7 +3,7 @@
 # Each bank entry specifies:
 #   ticker  — primary exchange ticker (Bloomberg/Reuters convention)
 #   CIK     — SEC Central Index Key (10-digit, zero-padded; US-listed only)
-#   sources — where to fetch reports (EDGAR for US filers; IR page URLs for others)
+#   sources — where to fetch reports (IR page URLs)
 #   filings — expected report types (SEC form types for US; generic labels otherwise)
 # ---------------------------------------------------------------------------
 
@@ -15,7 +15,6 @@ banks:
     market: US
     cik: "0000019617"
     sources:
-      edgar: true
       investor_relations: https://www.jpmorganchase.com/ir
     filings: [10-K, 10-Q, 8-K]
 
@@ -25,7 +24,6 @@ banks:
     market: US
     cik: "0000070858"
     sources:
-      edgar: true
       investor_relations: https://investor.bankofamerica.com
     filings: [10-K, 10-Q, 8-K]
 
@@ -35,7 +33,6 @@ banks:
     market: US
     cik: "0000831001"
     sources:
-      edgar: true
       investor_relations: https://www.citigroup.com/global/investors
     filings: [10-K, 10-Q, 8-K]
 
@@ -45,7 +42,6 @@ banks:
     market: US
     cik: "0000072971"
     sources:
-      edgar: true
       investor_relations: https://www.wellsfargo.com/about/investor-relations
     filings: [10-K, 10-Q, 8-K]
 
@@ -55,7 +51,6 @@ banks:
     market: US
     cik: "0000886982"
     sources:
-      edgar: true
       investor_relations: https://www.goldmansachs.com/investor-relations
     filings: [10-K, 10-Q, 8-K]
 
@@ -65,7 +60,6 @@ banks:
     market: US
     cik: "0000895421"
     sources:
-      edgar: true
       investor_relations: https://www.morganstanley.com/about-us-ir
     filings: [10-K, 10-Q, 8-K]
 

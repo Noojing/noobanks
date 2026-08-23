@@ -17,7 +17,6 @@ from noobanks.config.models import (
 @pytest.fixture
 def sample_source_config() -> SourceConfig:
     return SourceConfig(
-        edgar=False,
         investor_relations="https://home.barclays/investor-relations",
     )
 
@@ -42,7 +41,7 @@ def sample_us_bank_spec() -> BankSpec:
         exchange="NYSE",
         market="US",
         cik="0000019617",
-        sources=SourceConfig(edgar=True, investor_relations="https://www.jpmorganchase.com/ir"),
+        sources=SourceConfig(investor_relations="https://www.jpmorganchase.com/ir"),
         filings=["10-K", "10-Q", "8-K"],
     )
 
@@ -55,7 +54,6 @@ def sample_cn_bank_spec() -> BankSpec:
         exchange="SSE",
         market="CN",
         sources=SourceConfig(
-            edgar=False,
             investor_relations="https://www.icbc-ltd.com/en/page/1220435982957096960.html",
         ),
         filings=["annual_report", "interim_report", "quarterly_report"],
@@ -84,7 +82,6 @@ def tmp_yaml_config(tmp_path: Path) -> Path:
                 "exchange": "LSE",
                 "market": "UK",
                 "sources": {
-                    "edgar": False,
                     "investor_relations": "https://test.bank/ir",
                 },
                 "filings": ["annual_report"],

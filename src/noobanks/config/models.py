@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field
 class SourceConfig(BaseModel):
     """Data sources for a bank."""
 
-    edgar: bool = False
     investor_relations: str
 
 
