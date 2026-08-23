@@ -15,7 +15,7 @@ from noobanks.sources.base import (
     DEFAULT_USER_AGENT,
     SourceAdapter,
 )
-from noobanks.sources.extraction import extract_nav_links, extract_pdf_links
+from noobanks.sources.webutils import extract_nav_links, extract_pdf_links
 from noobanks.sources.scoring import score_candidate
 from noobanks.storage.store import DEFAULT_DATA_DIR
 

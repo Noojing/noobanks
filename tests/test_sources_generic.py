@@ -14,7 +14,7 @@ from aiohttp import ClientResponseError
 from noobanks.config.models import BankSpec, SourceConfig
 from noobanks.sources.base import FetchResult, Report
 from noobanks.sources.composite_adapter import CompositeAdapter
-from noobanks.sources.extraction import extract_nav_links, extract_pdf_links
+from noobanks.sources.webutils import extract_nav_links, extract_pdf_links
 from noobanks.sources.keywords import (
     NAV_KEYWORDS,
     REPORT_PATTERNS,

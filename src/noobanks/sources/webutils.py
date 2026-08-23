@@ -1,4 +1,4 @@
-"""HTML extraction helpers for finding PDF links and navigation URLs."""
+"""Web scraping utilities for finding PDF links and navigation URLs."""
 
 from __future__ import annotations
 

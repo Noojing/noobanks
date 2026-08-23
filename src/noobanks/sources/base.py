@@ -25,7 +25,7 @@ from tenacity import (
 from bs4 import BeautifulSoup
 
 from noobanks.config.models import BankSpec
-from noobanks.sources.extraction import (
+from noobanks.sources.webutils import (
     extract_nav_links,
     extract_pdf_links,
 )
