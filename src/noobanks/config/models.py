@@ -94,6 +94,9 @@ class MetricSpec(BaseModel):
             accounting terms often do not appear in bank reports.
         description: What the metric means and its formula from stated
             components — included in the LLM prompt.
+
+    TODO: Refactor for more comprehensive output schema defined 
+        via config/metrics.json.
     """
 
     name: str

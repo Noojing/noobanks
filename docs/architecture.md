@@ -181,7 +181,8 @@ noobanks/
 │   ├── config/
 │   │   ├── __init__.py
 │   │   ├── loader.py           # YAML → pydantic models
-│   │   └── models.py           # BankSpec, MetricSpec, PipelineConfig
+│   │   ├── models.py           # BankSpec, MetricSpec, PipelineConfig
+│   │   └── templates/          # Default config templates (seeded to ~/.noobanks/config/)
 │   ├── sources/
 │   │   ├── __init__.py
 │   │   ├── base.py             # SourceAdapter ABC
