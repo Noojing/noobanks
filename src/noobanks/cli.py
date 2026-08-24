@@ -109,7 +109,9 @@ def fetch_bank(
 
     if result.report:
         console.print(
-            f"  [green]✓[/green] {result.report.filename} ({result.report.size_mb:.1f} MB) → {result.report.local_path}"
+            f"  [green]✓[/green] {result.report.filename} ({result.report.size_mb:.1f} MB) "
+            f"from [dim]{result.report.downloaded_from}[/dim] "
+            f"→ {result.report.local_path}"
         )
     if result.error:
         console.print(f"  [red]✗[/red] {result.error}")
@@ -150,7 +152,11 @@ def fetch_all(
             result = await adapter.fetch(bank, report_type, year, period, force=force)
             if result.report:
                 succeeded.append(result)
-                console.print(f"    [green]✓[/green] {result.report.filename} ({result.report.size_mb:.1f} MB)")
+                console.print(
+                    f"    [green]✓[/green] {result.report.filename} "
+                    f"({result.report.size_mb:.1f} MB) "
+                    f"from [dim]{result.report.downloaded_from}[/dim]"
+                )
             else:
                 failed.append(result)
                 console.print(f"    [red]✗[/red] {result.error}")

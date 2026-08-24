@@ -8,8 +8,6 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
-import aiohttp
-
 from noobanks.config.models import BankSpec
 from noobanks.sources.base import (
     DEFAULT_USER_AGENT,
@@ -29,9 +27,9 @@ class IrAdapter(SourceAdapter):
 
     Strategy:
     1. Scrape the IR landing page → extract all PDF links matching report type + year
-    2. Follow common IR sub-paths and scrape those too
-    3. If the static crawl finds nothing, render the IR page in a headless
-       browser (Playwright) to capture JS-rendered content
+    2. Follow navigation links and scrape those too (BFS up to ``max_depth``)
+    3. Only if the static crawl finds nothing, fall back to rendering the IR
+       page in a headless browser (Playwright) to capture JS-rendered content
     4. HEAD-verify candidates before download
     """
 
@@ -44,7 +42,9 @@ class IrAdapter(SourceAdapter):
         rate_limit_delay: float = 3.0,
         max_concurrent: int = 4,
         browser_fallback: bool = True,
-        browser_max_pages: int = 3,
+        browser_max_pages: int = 5,
+        browser_max_retries: int = 2,
+        score_threshold: int = 9,
     ):
         super().__init__(
             data_dir=data_dir,
@@ -55,26 +55,26 @@ class IrAdapter(SourceAdapter):
         )
         self.browser_fallback = browser_fallback
         self.browser_max_pages = browser_max_pages
+        self.browser_max_retries = browser_max_retries
+        self.score_threshold = score_threshold
 
-    def _sort_candidates(
+    def _score_candidates(
         self,
         candidates: list[tuple[str, str]],
         year_str: str,
         report_type: str,
         period: str = "FY",
-    ) -> list[str]:
-        """Sort ``(url, anchor_text)`` candidates by relevance score."""
-        return [
-            url
-            for url, _ in sorted(
-                candidates,
-                key=lambda ut: score_candidate(
-                    ut[0], year_str, link_text=ut[1],
-                    report_type=report_type, period=period,
-                ),
-                reverse=True,
-            )
+    ) -> list[tuple[str, int]]:
+        """Score ``(url, anchor_text)`` candidates and return ``(url, score)`` sorted descending."""
+        scored = [
+            (url, score_candidate(
+                url, year_str, link_text=text,
+                report_type=report_type, period=period,
+            ))
+            for url, text in candidates
         ]
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return scored
 
     async def discover_urls(
         self, bank: BankSpec, report_type: str, year: int,
@@ -92,33 +92,43 @@ class IrAdapter(SourceAdapter):
                 )
 
             crawl_links = await self._find_pdf_links(
-                session, ir_base, report_type, year_str, max_depth=2,
+                session, ir_base, report_type, year_str, max_depth=3,
             )
             for url, text in crawl_links:
                 if url not in candidates:
                     candidates[url] = text
 
-        candidates_list = self._sort_candidates(
+        scored = self._score_candidates(
             list(candidates.items()), year_str, report_type, period,
         )
+        best_score = scored[0][1] if scored else 0
 
-        if not candidates_list and self.browser_fallback:
+        if self.browser_fallback and (
+            not scored or best_score < self.score_threshold
+        ):
             logger.info(
-                "Crawl found no PDFs for %s %s %s; trying headless-browser render",
+                "All crawl candidates scored below threshold %d "
+                "(best=%d) for %s %s %s; trying headless-browser render",
+                self.score_threshold, best_score,
                 bank.ticker, report_type, year,
             )
             browser_links = await self._discover_via_browser(
                 ir_base, report_type, year_str
             )
-            candidates_list = self._sort_candidates(
-                browser_links, year_str, report_type, period,
+            for url, text in browser_links:
+                if url not in candidates:
+                    candidates[url] = text
+            scored = self._score_candidates(
+                list(candidates.items()), year_str, report_type, period,
             )
+
+        all_scored = [url for url, _ in scored]
 
         logger.info(
             "Discovered %d candidate URLs for %s %s %s",
-            len(candidates_list), bank.ticker, report_type, year,
+            len(all_scored), bank.ticker, report_type, year,
         )
-        return candidates_list
+        return all_scored
 
     async def _discover_via_browser(
         self,
@@ -137,11 +147,8 @@ class IrAdapter(SourceAdapter):
         pdfs = extract_pdf_links(
             html, ir_base, report_type, year_str
         )
-        if pdfs:
-            return pdfs
 
         nav_links = extract_nav_links(html, ir_base)
-        results: list[tuple[str, str]] = []
         seen: set[str] = set()
         pages_rendered = 0
         for nav_url in nav_links:
@@ -160,15 +167,20 @@ class IrAdapter(SourceAdapter):
             ):
                 if link not in seen:
                     seen.add(link)
-                    results.append((link, text))
+                    pdfs.append((link, text))
 
-        return results
+        return pdfs
 
     async def _render_page(
         self, url: str, timeout: Optional[int] = None,
     ) -> Optional[str]:
         """Render a page in a headless browser and return its HTML.
 
+        Uses ``domcontentloaded`` instead of ``networkidle`` to avoid
+        hanging on JS-heavy sites with continuous background requests
+        (analytics, WebSockets, etc.).
+        Retries ``page.goto`` on timeout up to ``self.browser_max_retries``
+        times with exponential backoff.
         Falls back gracefully when Playwright is not installed.
         """
         try:
@@ -181,6 +193,8 @@ class IrAdapter(SourceAdapter):
             )
             return None
 
+        timeout_ms = (timeout or self.timeout) * 1000
+
         try:
             async with async_playwright() as p:
                 browser = await p.chromium.launch(headless=True)
@@ -189,11 +203,26 @@ class IrAdapter(SourceAdapter):
                         user_agent=self.user_agent,
                     )
                     page = await context.new_page()
-                    await page.goto(
-                        url,
-                        wait_until="networkidle",
-                        timeout=(timeout or self.timeout) * 1000,
-                    )
+                    for attempt in range(1 + self.browser_max_retries):
+                        try:
+                            await page.goto(
+                                url,
+                                wait_until="domcontentloaded",
+                                timeout=timeout_ms,
+                            )
+                            break
+                        except TimeoutError:
+                            if attempt >= self.browser_max_retries:
+                                raise
+                            wait = 2 * (2 ** attempt)
+                            logger.warning(
+                                "page.goto timeout for %s "
+                                "(attempt %d/%d); retrying in %ds",
+                                url, attempt + 1,
+                                1 + self.browser_max_retries, wait,
+                            )
+                            await asyncio.sleep(wait)
+                    await page.wait_for_timeout(5_000)
                     return await page.content()
                 finally:
                     await browser.close()

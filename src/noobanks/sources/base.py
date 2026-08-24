@@ -43,7 +43,7 @@ class Report:
     year: int
     period: str  # FY, Q1-Q4, H1, H2
     local_path: Path
-    url: str
+    downloaded_from: str
     file_size: int = 0
     downloaded_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     content_hash: str = ""
@@ -368,7 +368,7 @@ class SourceAdapter(ABC):
             year=year,
             period=period,
             local_path=target,
-            url=url,
+            downloaded_from=url,
             file_size=file_size,
             content_hash=content_hash,
         )
@@ -404,7 +404,7 @@ class SourceAdapter(ABC):
                 year=year,
                 period=period,
                 local_path=target,
-                url="(cached)",
+                downloaded_from="(cached)",
                 file_size=target.stat().st_size,
             )
             return result
