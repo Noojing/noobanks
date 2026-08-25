@@ -18,7 +18,7 @@ class TestReport:
             year=2025,
             period="FY",
             local_path=Path("/tmp/BARC_L_annual_report_FY.pdf"),
-            url="https://example.com/report.pdf",
+            downloaded_from="https://example.com/report.pdf",
             file_size=10_485_760,
             content_hash="abc123",
         )
@@ -36,7 +36,7 @@ class TestReport:
             year=2025,
             period="FY",
             local_path=Path("/tmp/JPM_10-K_FY.pdf"),
-            url="https://example.com/report.pdf",
+            downloaded_from="https://example.com/report.pdf",
         )
         assert r.file_size == 0
         assert r.content_hash == ""
@@ -49,7 +49,7 @@ class TestReport:
             year=2025,
             period="FY",
             local_path=Path("/data/raw/2025/BAC_10-K_FY.pdf"),
-            url="https://example.com/report.pdf",
+            downloaded_from="https://example.com/report.pdf",
         )
         assert r.filename == "BAC_10-K_FY.pdf"
 
@@ -60,7 +60,7 @@ class TestReport:
             year=2025,
             period="FY",
             local_path=Path("/tmp/test.pdf"),
-            url="https://example.com/report.pdf",
+            downloaded_from="https://example.com/report.pdf",
             file_size=5_242_880,
         )
         assert r.size_mb == 5.0
@@ -72,7 +72,7 @@ class TestReport:
             year=2025,
             period="FY",
             local_path=Path("/tmp/test.pdf"),
-            url="https://example.com/report.pdf",
+            downloaded_from="https://example.com/report.pdf",
             file_size=0,
         )
         assert r.size_mb == 0.0
@@ -93,7 +93,7 @@ class TestFetchResult:
             year=2025,
             period="FY",
             local_path=Path("/tmp/test.pdf"),
-            url="https://example.com/report.pdf",
+            downloaded_from="https://example.com/report.pdf",
         )
         fr = FetchResult(bank=sample_bank_spec, report=r)
         assert fr.succeeded == 1
@@ -114,7 +114,7 @@ class TestFetchResult:
             year=2025,
             period="FY",
             local_path=Path("/tmp/test.pdf"),
-            url="https://example.com/report.pdf",
+            downloaded_from="https://example.com/report.pdf",
         )
         fr = FetchResult(
             bank=sample_bank_spec,

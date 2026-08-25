@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -64,6 +66,17 @@ app.add_typer(list_app, name="list")
 
 # ── helper ────────────────────────────────────────────────────────────────
 
+@contextmanager
+def _timed(description: str):
+    """Context manager that logs elapsed wall-clock time on exit."""
+    start = time.perf_counter()
+    try:
+        yield
+    finally:
+        elapsed = time.perf_counter() - start
+        console.print(f"  [dim]⏱ {description}: {elapsed:.1f}s[/dim]")
+
+
 def _period_label(report_type: str, period: str) -> str:
     """Human-readable label for a report type + period combo."""
     if period == "FY":
@@ -105,7 +118,8 @@ def fetch_bank(
 
     ReportStore(data_dir).ensure_dirs()
     adapter = CompositeAdapter(data_dir=data_dir)
-    result = _run_async(adapter.fetch(bank, report_type, year, period, force=force))
+    with _timed(f"Fetch {bank.ticker}"):
+        result = _run_async(adapter.fetch(bank, report_type, year, period, force=force))
 
     if result.report:
         console.print(
@@ -164,7 +178,8 @@ def fetch_all(
                 await asyncio.sleep(2)  # inter-bank cooldown
         return succeeded, failed
 
-    succeeded, failed = _run_async(_fetch_all())
+    with _timed(f"Fetch all {len(banks)} banks"):
+        succeeded, failed = _run_async(_fetch_all())
     console.print(f"\n[bold]Summary:[/bold] {len(succeeded)} succeeded, {len(failed)} failed")
 
 
@@ -230,7 +245,8 @@ def parse_bank(
         console.print(f"[red]Bank not found:[/red] {ticker}")
         raise typer.Exit(1)
 
-    ok, message = _parse_one(ReportStore(data_dir), bank, year, report_type, period, force)
+    with _timed(f"Parse {bank.ticker}"):
+        ok, message = _parse_one(ReportStore(data_dir), bank, year, report_type, period, force)
     if not ok:
         console.print(f"[red]✗[/red] {bank.ticker}: {message}")
         raise typer.Exit(1)
@@ -273,24 +289,24 @@ def parse_all(
     )
     parsed, skipped, failed = [], [], []
 
-    # CPU-bound work (pymupdf4llm) — run in a process pool.
-    with ProcessPoolExecutor(max_workers=workers) as executor:
-        futures = {
-            executor.submit(_parse_one, store, bank, year, report_type, period, force): bank
-            for bank in banks
-        }
-        for future in as_completed(futures):
-            bank = futures[future]
-            ok, message = future.result()
-            if not ok:
-                failed.append(bank.ticker)
-                console.print(f"  [red]✗[/red] {bank.ticker}: {message}")
-            elif "already parsed" in message:
-                skipped.append(bank.ticker)
-                console.print(f"  [dim]•[/dim] {bank.ticker}: {message}")
-            else:
-                parsed.append(bank.ticker)
-                console.print(f"  [green]✓[/green] {bank.ticker}: {message}")
+    with _timed(f"Parse all {len(banks)} banks"):
+        with ProcessPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(_parse_one, store, bank, year, report_type, period, force): bank
+                for bank in banks
+            }
+            for future in as_completed(futures):
+                bank = futures[future]
+                ok, message = future.result()
+                if not ok:
+                    failed.append(bank.ticker)
+                    console.print(f"  [red]✗[/red] {bank.ticker}: {message}")
+                elif "already parsed" in message:
+                    skipped.append(bank.ticker)
+                    console.print(f"  [dim]•[/dim] {bank.ticker}: {message}")
+                else:
+                    parsed.append(bank.ticker)
+                    console.print(f"  [green]✓[/green] {bank.ticker}: {message}")
 
     console.print(
         f"\n[bold]Summary:[/bold] {len(parsed)} parsed, "
@@ -380,9 +396,10 @@ def extract_bank(
         console.print(f"[red]Bank not found:[/red] {ticker}")
         raise typer.Exit(1)
 
-    ok, message = _run_async(_extract_one(
-        ReportStore(data_dir), bank, year, force, show_metrics=True
-    ))
+    with _timed(f"Extract {bank.ticker}"):
+        ok, message = _run_async(_extract_one(
+            ReportStore(data_dir), bank, year, force, show_metrics=True
+        ))
     if not ok:
         console.print(f"[red]✗[/red] {bank.ticker}: {message}")
         raise typer.Exit(1)
@@ -434,7 +451,8 @@ def extract_all(
                 await asyncio.sleep(2)  # inter-bank cooldown (LLM rate limits)
         return extracted, skipped, failed
 
-    extracted, skipped, failed = _run_async(_extract_all())
+    with _timed(f"Extract all {len(banks)} banks"):
+        extracted, skipped, failed = _run_async(_extract_all())
     console.print(
         f"\n[bold]Summary:[/bold] {len(extracted)} extracted, "
         f"{len(skipped)} skipped, {len(failed)} failed"
@@ -453,21 +471,22 @@ def list_banks(
     registry = load_bank_registry()
     banks = registry.by_market(market) if market else list(registry.banks)
 
-    table = Table(title=f"Configured Banks ({len(banks)})")
-    table.add_column("Ticker", style="cyan")
-    table.add_column("Name")
-    table.add_column("Market", style="dim")
-    table.add_column("Exchange", style="dim")
-    table.add_column("Filings", style="dim")
+    with _timed("List banks"):
+        table = Table(title=f"Configured Banks ({len(banks)})")
+        table.add_column("Ticker", style="cyan")
+        table.add_column("Name")
+        table.add_column("Market", style="dim")
+        table.add_column("Exchange", style="dim")
+        table.add_column("Filings", style="dim")
 
-    for bank in banks:
-        table.add_row(
-            bank.ticker,
-            bank.name,
-            bank.market,
-            bank.exchange,
-            ", ".join(bank.filings),
-        )
+        for bank in banks:
+            table.add_row(
+                bank.ticker,
+                bank.name,
+                bank.market,
+                bank.exchange,
+                ", ".join(bank.filings),
+            )
 
     console.print(table)
 
@@ -491,17 +510,18 @@ def list_reports(
         console.print("[dim]No reports downloaded yet.[/dim]")
         return
 
-    table = Table(title=f"Downloaded Reports ({len(paths)})")
-    table.add_column("File", style="cyan")
-    table.add_column("Size", style="dim")
-    table.add_column("Year", style="dim")
+    with _timed("List reports"):
+        table = Table(title=f"Downloaded Reports ({len(paths)})")
+        table.add_column("File", style="cyan")
+        table.add_column("Size", style="dim")
+        table.add_column("Year", style="dim")
 
-    total_bytes = 0
-    for p in paths:
-        size = p.stat().st_size
-        total_bytes += size
-        year_str = p.parent.name
-        table.add_row(p.name, f"{size / (1024*1024):.1f} MB", year_str)
+        total_bytes = 0
+        for p in paths:
+            size = p.stat().st_size
+            total_bytes += size
+            year_str = p.parent.name
+            table.add_row(p.name, f"{size / (1024*1024):.1f} MB", year_str)
 
     console.print(table)
     console.print(f"[dim]Total: {len(paths)} files, {total_bytes / (1024*1024):.1f} MB[/dim]")

@@ -5,9 +5,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import ssl
 import time
 from abc import ABC, abstractmethod
-from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,10 +25,6 @@ from tenacity import (
 from bs4 import BeautifulSoup
 
 from noobanks.config.models import BankSpec
-from noobanks.sources.webutils import (
-    extract_nav_links,
-    extract_pdf_links,
-)
 from noobanks.storage.store import DEFAULT_DATA_DIR
 
 logger = logging.getLogger(__name__)
@@ -99,7 +95,6 @@ class SourceAdapter(ABC):
     - :meth:`_validate_ir_url` — GET-based page validation (detects JS shells)
     - :meth:`_rate_limit` — per-domain request throttling
     - :meth:`_download` — reliable PDF download with retry
-    - :meth:`_find_pdf_links` — scrape or crawl pages for PDF links
     """
 
     def __init__(
@@ -108,7 +103,7 @@ class SourceAdapter(ABC):
         *,
         timeout: int = 30,
         user_agent: str = DEFAULT_USER_AGENT,
-        rate_limit_delay: float = 3.0,
+        rate_limit_delay: float = 0.5,
         max_concurrent: int = 4,
     ):
         self.data_dir = Path(data_dir)
@@ -121,10 +116,18 @@ class SourceAdapter(ABC):
     # ── HTTP session helpers ────────────────────────────────────────────
 
     def _get_session(self) -> aiohttp.ClientSession:
-        """Create a new aiohttp client session with configured user-agent."""
+        """Create a new aiohttp client session with configured user-agent.
+
+        The session's SSL context enables ``OP_LEGACY_SERVER_CONNECT`` so
+        that handshakes with servers still using legacy TLS versions
+        (e.g. TLS 1.0 / TLS 1.1) do not fail.
+        """
+        ctx = ssl.create_default_context()
+        ctx.options |= ssl.OP_LEGACY_SERVER_CONNECT
         return aiohttp.ClientSession(
             headers={"User-Agent": self.user_agent},
             timeout=aiohttp.ClientTimeout(total=self.timeout),
+            connector = aiohttp.TCPConnector(ssl=ctx),
         )
 
     # ── Unified HEAD verification ───────────────────────────────────────
@@ -243,71 +246,6 @@ class SourceAdapter(ABC):
                 "valid": False,
                 "error": f"IR URL connection failed: {url} — {exc}",
             }
-
-    # ── Shared PDF discovery (single-page scrape or multi-page crawl) ───
-
-    async def _find_pdf_links(
-        self,
-        session: aiohttp.ClientSession,
-        base_url: str,
-        report_type: str,
-        year_str: str,
-        max_depth: int = 0,
-    ) -> list[tuple[str, str]]:
-        """Fetch pages and extract PDF links.
-
-        When *max_depth* is 0 (default) only *base_url* is scraped.
-        When *max_depth* > 0 the page is crawled BFS up to that depth,
-        following navigation links to discover further PDF pages.
-        """
-        domain = urlparse(base_url).netloc
-        visited: set[str] = set()
-        all_pdf_links: list[tuple[str, str]] = []
-        seen_urls: set[str] = set()
-
-        queue: deque[tuple[str, int]] = deque([(base_url, 0)])
-
-        while queue:
-            url, depth = queue.popleft()
-
-            if url in visited:
-                continue
-            visited.add(url)
-
-            await self._rate_limit(domain)
-            try:
-                async with session.get(
-                    url, allow_redirects=True, max_redirects=3
-                ) as resp:
-                    if resp.status != 200:
-                        logger.debug("Skip %s → HTTP %d", url, resp.status)
-                        continue
-                    html = await resp.text(errors="replace")
-            except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
-                logger.debug("Skip %s → %s", url, exc)
-                continue
-
-            pdf_links = extract_pdf_links(html, url, report_type, year_str)
-            for link, text in pdf_links:
-                if link not in seen_urls:
-                    seen_urls.add(link)
-                    all_pdf_links.append((link, text))
-
-            if pdf_links and depth > 0:
-                continue
-
-            if depth < max_depth:
-                nav_links = extract_nav_links(html, url)
-                for nav_url in nav_links:
-                    nav_domain = urlparse(nav_url).netloc
-                    if nav_domain == domain and nav_url not in visited:
-                        queue.append((nav_url, depth + 1))
-
-        logger.debug(
-            "Find PDFs from %s: visited %d pages, found %d PDFs (max depth %d)",
-            base_url, len(visited), len(all_pdf_links), max_depth,
-        )
-        return all_pdf_links
 
     # ── Shared download ─────────────────────────────────────────────────
 

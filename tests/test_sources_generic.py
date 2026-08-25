@@ -219,7 +219,7 @@ class TestFetchCached:
 
         result = await adapter.fetch(sample_bank_spec, "annual_report", 2025)
         assert result.succeeded == 1
-        assert result.report.url == "(cached)"
+        assert result.report.downloaded_from == "(cached)"
 
     @pytest.mark.asyncio
     async def test_force_re_downloads(self, tmp_data_dir: Path, mocker):
@@ -634,7 +634,7 @@ class TestBrowserFallback:
     """Tests for the headless-browser fallback — playwright-free.
 
     The real Playwright client is never imported: tests patch the
-    `_render_page` / `_discover_via_browser` wrapper methods instead.
+    `make_browser_page_getter` factory or the `crawl_pdf_links` function instead.
     """
 
     def _bank(self, ir_url: str) -> BankSpec:
@@ -657,14 +657,21 @@ class TestBrowserFallback:
         adapter = IrAdapter()
 
         mocker.patch.object(adapter, "_validate_ir_url", return_value={"valid": True})
-        mocker.patch.object(adapter, "_find_pdf_links", return_value=[])
-        browser_spy = mocker.patch.object(
-            adapter, "_discover_via_browser", return_value=[(pdf, "2025 Annual Report")]
+        crawl_mock = mocker.patch(
+            "noobanks.sources.ir_adapter.crawl_pdf_links",
+            side_effect=[
+                [],
+                [(pdf, "2025 Annual Report")],
+            ],
         )
 
         urls = await adapter.discover_urls(self._bank(ir_url), "annual_report", 2025)
         assert urls == [pdf]
-        browser_spy.assert_called_once_with(ir_url, "annual_report", "2025")
+        assert crawl_mock.call_count == 2
+        static_call = crawl_mock.call_args_list[0]
+        browser_call = crawl_mock.call_args_list[1]
+        assert static_call.kwargs.get("max_pages") is None
+        assert browser_call.kwargs.get("max_pages") == adapter.browser_max_pages
 
     @pytest.mark.asyncio
     async def test_discover_urls_skips_browser_when_crawl_succeeds(self, mocker):
@@ -674,14 +681,16 @@ class TestBrowserFallback:
         adapter = IrAdapter()
         crawled = [("https://home.barclays/reports/2025-annual-report.pdf", "Annual Report 2025")]
         mocker.patch.object(adapter, "_validate_ir_url", return_value={"valid": True})
-        mocker.patch.object(adapter, "_find_pdf_links", return_value=crawled)
-        browser_spy = mocker.patch.object(adapter, "_discover_via_browser", return_value=[])
+        crawl_mock = mocker.patch(
+            "noobanks.sources.ir_adapter.crawl_pdf_links",
+            return_value=crawled,
+        )
 
         urls = await adapter.discover_urls(
             self._bank("https://home.barclays/investor-relations"), "annual_report", 2025
         )
         assert urls == [url for url, _ in crawled]
-        browser_spy.assert_not_called()
+        assert crawl_mock.call_count == 1
 
     @pytest.mark.asyncio
     async def test_browser_fallback_disabled_via_constructor(self, mocker):
@@ -690,27 +699,31 @@ class TestBrowserFallback:
 
         adapter = IrAdapter(browser_fallback=False)
         mocker.patch.object(adapter, "_validate_ir_url", return_value={"valid": True})
-        mocker.patch.object(adapter, "_find_pdf_links", return_value=[])
-        browser_spy = mocker.patch.object(adapter, "_discover_via_browser", return_value=[])
+        crawl_mock = mocker.patch(
+            "noobanks.sources.ir_adapter.crawl_pdf_links",
+            return_value=[],
+        )
 
         urls = await adapter.discover_urls(
             self._bank("https://www.icbc-ltd.com/en/page/1220.html"), "annual_report", 2025
         )
         assert urls == []
-        browser_spy.assert_not_called()
+        assert crawl_mock.call_count == 1
 
     @pytest.mark.asyncio
     async def test_render_page_returns_none_when_playwright_missing(self, mocker):
         """Missing playwright degrades to None (no exception)."""
         import sys
 
-        from noobanks.sources.ir_adapter import IrAdapter
+        from noobanks.sources.webutils import make_browser_page_getter
 
-        adapter = IrAdapter()
         mocker.patch.dict(
             sys.modules, {"playwright": None, "playwright.async_api": None}
         )
-        assert await adapter._render_page("https://example.com") is None
+        getter = make_browser_page_getter(
+            timeout=30, browser_max_retries=2, user_agent="test-agent",
+        )
+        assert await getter("https://example.com") is None
 
     @pytest.mark.asyncio
     async def test_render_page_returns_none_on_render_failure(self, mocker):
@@ -718,7 +731,7 @@ class TestBrowserFallback:
         import sys
         import types
 
-        from noobanks.sources.ir_adapter import IrAdapter
+        from noobanks.sources.webutils import make_browser_page_getter
 
         async def boom():
             raise RuntimeError("no browser binary")
@@ -733,60 +746,59 @@ class TestBrowserFallback:
             },
         )
 
-        adapter = IrAdapter()
-        assert await adapter._render_page("https://example.com") is None
+        getter = make_browser_page_getter(
+            timeout=30, browser_max_retries=2, user_agent="test-agent",
+        )
+        assert await getter("https://example.com") is None
 
     @pytest.mark.asyncio
-    async def test_discover_via_browser_extracts_pdfs_from_rendered_landing(self, mocker):
+    async def test_crawl_pdf_links_extracts_pdfs_from_rendered_landing(self, mocker):
         """PDF links in the rendered landing page are extracted directly."""
-        from noobanks.sources.ir_adapter import IrAdapter
+        from noobanks.sources.webutils import crawl_pdf_links
 
         ir_url = "https://www.icbc-ltd.com/en/page/1220.html"
-        adapter = IrAdapter()
-        render_spy = mocker.patch.object(
-            adapter,
-            "_render_page",
+        getter = mocker.AsyncMock(
             return_value=_pdf_links_html(ir_url, "/en/page/2025-annual-report.pdf"),
         )
 
-        urls = await adapter._discover_via_browser(
-            ir_url, "annual_report", "2025"
+        urls = await crawl_pdf_links(
+            ir_url, "annual_report", "2025",
+            max_depth=1,
+            page_getter=getter,
         )
         assert urls == [
             ("https://www.icbc-ltd.com/en/page/2025-annual-report.pdf", "2025-annual-report.pdf")
         ]
-        render_spy.assert_called_once_with(ir_url)
+        getter.assert_called_once_with(ir_url)
 
     @pytest.mark.asyncio
-    async def test_discover_via_browser_follows_nav_links_when_no_direct_pdfs(self, mocker):
+    async def test_crawl_pdf_links_follows_nav_links_when_no_direct_pdfs(self, mocker):
         """Without direct PDFs, render same-domain nav pages and extract there."""
-        from noobanks.sources.ir_adapter import IrAdapter
+        from noobanks.sources.webutils import crawl_pdf_links
 
         ir_url = "https://www.icbc-ltd.com/en/page/1220.html"
         nav_url = "https://www.icbc-ltd.com/en/page/financial-results/"
-        adapter = IrAdapter()
         landing = (
             '<html><body><a href="/en/page/financial-results/">'
             "Financial Results</a></body></html>"
         )
         nav_page = _pdf_links_html(nav_url, "annual-report-2025.pdf")
-        render_spy = mocker.patch.object(
-            adapter, "_render_page", side_effect=[landing, nav_page]
-        )
+        getter = mocker.AsyncMock(side_effect=[landing, nav_page])
 
-        urls = await adapter._discover_via_browser(
-            ir_url, "annual_report", "2025"
+        urls = await crawl_pdf_links(
+            ir_url, "annual_report", "2025",
+            max_depth=1,
+            page_getter=getter,
         )
         assert urls == [(f"{nav_url}annual-report-2025.pdf", "annual-report-2025.pdf")]
-        assert render_spy.call_count == 2
+        assert getter.await_count == 2
 
     @pytest.mark.asyncio
-    async def test_discover_via_browser_bounds_nav_pages_and_stays_same_domain(self, mocker):
+    async def test_crawl_pdf_links_bounds_nav_pages_and_stays_same_domain(self, mocker):
         """Nav rendering is capped and external domains are never rendered."""
-        from noobanks.sources.ir_adapter import IrAdapter
+        from noobanks.sources.webutils import crawl_pdf_links
 
         ir_url = "https://www.icbc-ltd.com/en/page/1220.html"
-        adapter = IrAdapter(browser_max_pages=1)
         landing = (
             "<html><body>"
             '<a href="/en/page/annual-reports/">Annual Reports</a>'
@@ -797,15 +809,16 @@ class TestBrowserFallback:
         nav_page = _pdf_links_html(
             "https://www.icbc-ltd.com/en/page/annual-reports/", "annual-report-2025.pdf"
         )
-        render_spy = mocker.patch.object(
-            adapter, "_render_page", side_effect=[landing, nav_page]
-        )
+        getter = mocker.AsyncMock(side_effect=[landing, nav_page])
 
-        urls = await adapter._discover_via_browser(
-            ir_url, "annual_report", "2025"
+        urls = await crawl_pdf_links(
+            ir_url, "annual_report", "2025",
+            max_depth=1,
+            max_pages=2,
+            page_getter=getter,
         )
-        assert render_spy.call_count == 2  # landing + first same-domain nav only
-        for call in render_spy.call_args_list:
+        assert getter.await_count == 2
+        for call in getter.await_args_list:
             assert "other.example.com" not in str(call.args[0])
         assert urls == [
             ("https://www.icbc-ltd.com/en/page/annual-reports/annual-report-2025.pdf", "annual-report-2025.pdf")
@@ -822,13 +835,14 @@ class TestBrowserFallback:
         annual_url = "https://www.icbc-ltd.com/en/page/2024AnnualReport.pdf"
 
         mocker.patch.object(adapter, "_validate_ir_url", return_value={"valid": True})
-        mocker.patch.object(adapter, "_find_pdf_links", return_value=[])
-        mocker.patch.object(
-            adapter,
-            "_discover_via_browser",
-            return_value=[
-                (interim_url, "2024 Interim Report"),
-                (annual_url, "2024 Annual Report"),
+        crawl_mock = mocker.patch(
+            "noobanks.sources.ir_adapter.crawl_pdf_links",
+            side_effect=[
+                [],
+                [
+                    (interim_url, "2024 Interim Report"),
+                    (annual_url, "2024 Annual Report"),
+                ],
             ],
         )
 
@@ -950,7 +964,7 @@ class TestCompositeAdapterInit:
         assert adapter.rate_limit_delay == 3.0
         assert len(adapter.adapters) == 2
         assert adapter.adapters[0].browser_fallback is True
-        assert adapter.adapters[0].browser_max_pages == 3
+        assert adapter.adapters[0].browser_max_pages is None
 
     def test_custom_values(self, tmp_path: Path):
         adapter = CompositeAdapter(

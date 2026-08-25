@@ -17,6 +17,7 @@ from noobanks.sources.base import (
 )
 from noobanks.sources.keywords import REPORT_TYPE_LABELS
 from noobanks.sources.scoring import score_candidate
+from noobanks.sources.webutils import crawl_pdf_links, make_static_page_getter
 from noobanks.storage.store import DEFAULT_DATA_DIR
 
 logger = logging.getLogger(__name__)
@@ -106,6 +107,7 @@ class DdgsAdapter(SourceAdapter):
         candidates: list[str] = []
 
         async with self._get_session() as session:
+            static_getter = make_static_page_getter(session)
             for result in results:
                 href = result.get("href", "")
                 if not href:
@@ -118,8 +120,9 @@ class DdgsAdapter(SourceAdapter):
                     continue
 
                 try:
-                    page_pdfs = await self._find_pdf_links(
-                        session, href, report_type, year_str,
+                    page_pdfs = await crawl_pdf_links(
+                        href, report_type, year_str,
+                        page_getter=static_getter,
                     )
                     for pdf_url, _ in page_pdfs:
                         if pdf_url not in candidates:

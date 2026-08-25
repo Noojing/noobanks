@@ -203,10 +203,8 @@ class DeepSeekLlmClient(LlmClient):
         max_tokens: int = 2048,
         timeout: float = 120.0,
     ):
-        import httpx
-
         self.model = model
-        self.base_url = base_url.rstrip("/")
+        self.base_url = base_url
         self.api_key_env = api_key_env
         self.max_tokens = max_tokens
         self._timeout = timeout
