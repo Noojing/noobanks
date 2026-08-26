@@ -34,6 +34,7 @@ def sample_bank_spec(sample_source_config: SourceConfig) -> BankSpec:
             "interim_report": ["H1", "H2"],
             "quarterly_report": ["Q1", "Q2", "Q3", "Q4"],
         },
+        aliases=["Barclays PLC"],
     )
 
 
@@ -51,6 +52,7 @@ def sample_us_bank_spec() -> BankSpec:
             "10-Q": ["Q1", "Q2", "Q3", "Q4"],
             "8-K": ["FY"],
         },
+        aliases=["JPMorgan Chase", "Chase"],
     )
 
 
@@ -69,6 +71,7 @@ def sample_cn_bank_spec() -> BankSpec:
             "interim_report": ["H1", "H2"],
             "quarterly_report": ["Q1", "Q2", "Q3", "Q4"],
         },
+        aliases=["ICBC", "Industrial and Commercial Bank", "工商银行"],
     )
 
 

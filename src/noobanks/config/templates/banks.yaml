@@ -5,6 +5,7 @@
 #   CIK     — SEC Central Index Key (10-digit, zero-padded; US-listed only)
 #   sources — where to fetch reports (IR page URLs)
 #   filings — map of report_type → applicable periods
+#   aliases — keywords used to filter irrelevant pages during crawling
 # ---------------------------------------------------------------------------
 
 banks:
@@ -20,6 +21,7 @@ banks:
       10-K: [FY]
       10-Q: [Q1, Q2, Q3, Q4]
       8-K: [FY]
+    aliases: [JPMorgan, Chase]
 
   - name: Bank of America Corp.
     ticker: BAC
@@ -32,6 +34,7 @@ banks:
       10-K: [FY]
       10-Q: [Q1, Q2, Q3, Q4]
       8-K: [FY]
+    aliases: [Bank of America, BAC]
 
   - name: Citigroup Inc.
     ticker: C
@@ -44,6 +47,7 @@ banks:
       10-K: [FY]
       10-Q: [Q1, Q2, Q3, Q4]
       8-K: [FY]
+    aliases: [Citi]
 
   - name: Wells Fargo & Company
     ticker: WFC
@@ -56,6 +60,7 @@ banks:
       10-K: [FY]
       10-Q: [Q1, Q2, Q3, Q4]
       8-K: [FY]
+    aliases: [Wells Fargo]
 
   - name: Goldman Sachs Group Inc.
     ticker: GS
@@ -68,6 +73,7 @@ banks:
       10-K: [FY]
       10-Q: [Q1, Q2, Q3, Q4]
       8-K: [FY]
+    aliases: [Goldman, Sachs]
 
   - name: Morgan Stanley
     ticker: MS
@@ -80,6 +86,7 @@ banks:
       10-K: [FY]
       10-Q: [Q1, Q2, Q3, Q4]
       8-K: [FY]
+    aliases: [Morgan Stanley, MS]
 
   # ── China Mainland (SSE / SZSE) ───────────────────────────────────────
   - name: Industrial & Commercial Bank of China (ICBC)
@@ -92,6 +99,7 @@ banks:
       annual_report: [FY]
       interim_report: [H1, H2]
       quarterly_report: [Q1, Q2, Q3, Q4]
+    aliases: [ICBC, Industrial and Commercial Bank, 工商银行]
 
   - name: China Construction Bank (CCB)
     ticker: "601939.SH"
@@ -103,6 +111,7 @@ banks:
       annual_report: [FY]
       interim_report: [H1, H2]
       quarterly_report: [Q1, Q2, Q3, Q4]
+    aliases: [CCB, China Construction Bank, 建设银行, 建行]
 
   - name: Agricultural Bank of China (ABC)
     ticker: "601288.SH"
@@ -114,6 +123,7 @@ banks:
       annual_report: [FY]
       interim_report: [H1, H2]
       quarterly_report: [Q1, Q2, Q3, Q4]
+    aliases: [ABC, Agricultural Bank of China, 农业银行, 农行]
 
   - name: Bank of China (BOC)
     ticker: "601988.SH"
@@ -125,6 +135,7 @@ banks:
       annual_report: [FY]
       interim_report: [H1, H2]
       quarterly_report: [Q1, Q2, Q3, Q4]
+    aliases: [BOC, Bank of China, 中国银行]
 
   - name: Bank of Communications (BoCom)
     ticker: "601328.SH"
@@ -136,6 +147,7 @@ banks:
       annual_report: [FY]
       interim_report: [H1, H2]
       quarterly_report: [Q1, Q2, Q3, Q4]
+    aliases: [BoCom, Bank of Communications, 交通银行]
 
   - name: Postal Savings Bank of China (PSBC)
     ticker: "601658.SH"
@@ -147,6 +159,7 @@ banks:
       annual_report: [FY]
       interim_report: [H1, H2]
       quarterly_report: [Q1, Q2, Q3, Q4]
+    aliases: [PSBC, Postal Savings Bank, 邮储银行]
 
   - name: China Merchants Bank (CMB)
     ticker: "600036.SH"
@@ -158,6 +171,7 @@ banks:
       annual_report: [FY]
       interim_report: [H1, H2]
       quarterly_report: [Q1, Q2, Q3, Q4]
+    aliases: [CMB, China Merchants Bank, 招商银行]
 
   - name: Ping An Bank Co. Ltd.
     ticker: "000001.SZ"
@@ -169,6 +183,7 @@ banks:
       annual_report: [FY]
       interim_report: [H1, H2]
       quarterly_report: [Q1, Q2, Q3, Q4]
+    aliases: [Ping An Bank, 平安银行]
 
   - name: Hangzhou Bank Co. Ltd.
     ticker: "600926.SH"
@@ -180,6 +195,7 @@ banks:
       annual_report: [FY]
       interim_report: [H1, H2]
       quarterly_report: [Q1, Q2, Q3, Q4]
+    aliases: [Hangzhou Bank, 杭州银行]
 
   # ── Hong Kong (HKEX) ──────────────────────────────────────────────────
   - name: Bank of China (Hong Kong) Ltd.
@@ -192,6 +208,7 @@ banks:
       annual_report: [FY]
       interim_report: [H1, H2]
       quarterly_report: [Q1, Q2, Q3, Q4]
+    aliases: [BOCHK, Bank of China Hong Kong, 中银香港]
 
   - name: Hang Seng Bank Ltd.
     ticker: "00011.HK"
@@ -203,6 +220,7 @@ banks:
       annual_report: [FY]
       interim_report: [H1, H2]
       quarterly_report: [Q1, Q2, Q3, Q4]
+    aliases: [Hang Seng Bank, 恒生银行]
 
   - name: Standard Chartered PLC
     ticker: "02888.HK"
@@ -214,6 +232,7 @@ banks:
       annual_report: [FY]
       interim_report: [H1, H2]
       quarterly_report: [Q1, Q2, Q3, Q4]
+    aliases: [Standard Chartered, SC, 渣打]
 
   - name: Bank of East Asia Ltd.
     ticker: "00023.HK"
@@ -225,6 +244,7 @@ banks:
       annual_report: [FY]
       interim_report: [H1, H2]
       quarterly_report: [Q1, Q2, Q3, Q4]
+    aliases: [Bank of East Asia, BEA, 东亚银行]
 
   - name: Dah Sing Financial Holdings Ltd.
     ticker: "00440.HK"
@@ -236,6 +256,7 @@ banks:
       annual_report: [FY]
       interim_report: [H1, H2]
       quarterly_report: [Q1, Q2, Q3, Q4]
+    aliases: [Dah Sing, 大新银行]
 
   # ── United Kingdom (LSE) ──────────────────────────────────────────────
   - name: HSBC Holdings plc
@@ -248,6 +269,7 @@ banks:
       annual_report: [FY]
       interim_report: [H1]
       quarterly_report: [Q1, Q3]
+    aliases: [HSBC]
 
   - name: Barclays PLC
     ticker: BARC.L
@@ -260,6 +282,7 @@ banks:
       interim_report: [H1, H2]
       quarterly_report: [Q1, Q2, Q3, Q4]
       6-K: [FY]
+    aliases: [Barclays, BARC]
 
   - name: Lloyds Banking Group plc
     ticker: LLOY.L
@@ -271,6 +294,7 @@ banks:
       annual_report: [FY]
       interim_report: [H1, H2]
       quarterly_report: [Q1, Q2, Q3, Q4]
+    aliases: [Lloyds]
 
   - name: NatWest Group plc
     ticker: NWG.L
@@ -282,6 +306,7 @@ banks:
       annual_report: [FY]
       interim_report: [H1, H2]
       quarterly_report: [Q1, Q2, Q3, Q4]
+    aliases: [NatWest, RBS]
 
   - name: Standard Chartered PLC
     ticker: STAN.L
@@ -293,3 +318,4 @@ banks:
       annual_report: [FY]
       interim_report: [H1, H2]
       quarterly_report: [Q1, Q2, Q3, Q4]
+    aliases: [Standard Chartered, SC, 渣打]

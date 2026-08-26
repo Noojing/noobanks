@@ -23,6 +23,7 @@ class BankSpec(BaseModel):
     cik: Optional[str] = None
     sources: SourceConfig
     filings: dict[str, list[str]] = Field(default_factory=dict)
+    aliases: list[str] = Field(default_factory=list)
 
     @property
     def ticker_safe(self) -> str:

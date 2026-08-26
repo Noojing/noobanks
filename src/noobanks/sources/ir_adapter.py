@@ -85,6 +85,7 @@ class IrAdapter(SourceAdapter):
             score_threshold=self.score_threshold,
             validator=_validator,
             period=period,
+            aliases=bank.aliases,
         )
 
         if crawl_result is None:

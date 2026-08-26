@@ -223,6 +223,7 @@ async def crawl_pdf_link(
     score_threshold: int = 0,
     validator: Optional[Callable[[str], Awaitable[Optional[dict]]]] = None,
     period: str = "FY",
+    aliases: Optional[list[str]] = None,
 ) -> Optional[tuple[str, str]]:
     """BFS-crawl pages for the first valid PDF link with scoring and optional validation.
 
@@ -296,6 +297,19 @@ async def crawl_pdf_link(
         if html is None:
             continue
         pages_fetched += 1
+
+        if aliases:
+            html_lower = html.lower()
+            url_lower = url.lower()
+            if not any(
+                alias.lower() in html_lower or alias.lower() in url_lower
+                for alias in aliases
+            ):
+                logger.debug(
+                    "  [depth %d] %s → no alias match, skipping",
+                    depth, url,
+                )
+                continue
 
         pdf_links = extract_pdf_links(html, url, report_type, year_str)
         if pdf_links:
