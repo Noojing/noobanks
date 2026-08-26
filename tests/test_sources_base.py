@@ -1,4 +1,4 @@
-"""Tests for noobanks.sources.base — Report, FetchResult, SourceAdapter."""
+"""Tests for noobanks.sources.base_adapter — Report, FetchResult, SourceAdapter."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from noobanks.config.models import BankSpec, SourceConfig
-from noobanks.sources.base import FetchResult, Report, SourceAdapter
+from noobanks.config.models import BankSpec
+from noobanks.sources.base_adapter import FetchResult, Report, SourceAdapter
 
 
 class TestReport:

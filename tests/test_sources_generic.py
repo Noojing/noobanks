@@ -9,10 +9,8 @@ import asyncio
 from pathlib import Path
 
 import pytest
-from aiohttp import ClientResponseError
 
 from noobanks.config.models import BankSpec, SourceConfig
-from noobanks.sources.base import FetchResult, Report
 from noobanks.sources.composite_adapter import CompositeAdapter
 from noobanks.sources.webutils import extract_nav_links, extract_pdf_links
 from noobanks.sources.keywords import (
@@ -336,7 +334,7 @@ class TestExtractPdfLinksAdvanced:
 
 
 class TestValidateUrl:
-    """Tests for validate_url — detect dead/broken URLs before crawling."""
+    """Tests for validate_page — detect dead/broken URLs before crawling."""
 
     @staticmethod
     def _mock_session_get(mocker, status: int, body: str):
@@ -354,22 +352,22 @@ class TestValidateUrl:
     @pytest.mark.asyncio
     async def test_http_200_with_html_is_valid(self, mocker):
         """A page returning 200 with real HTML content is valid."""
-        from noobanks.sources.webutils import validate_url
+        from noobanks.sources.webutils import validate_page
 
         mock_session = self._mock_session_get(
             mocker, 200,
             "<html><body><a href='/reports/'>Annual Reports</a></body></html>",
         )
-        result = await validate_url(mock_session, "https://bank.example.com/ir")
+        result = await validate_page(mock_session, "https://bank.example.com/ir")
         assert result["valid"] is True
 
     @pytest.mark.asyncio
     async def test_http_404_is_invalid(self, mocker):
         """HTTP 404 should be reported as invalid with a clear message."""
-        from noobanks.sources.webutils import validate_url
+        from noobanks.sources.webutils import validate_page
 
         mock_session = self._mock_session_get(mocker, 404, "<html><body>Not Found</body></html>")
-        result = await validate_url(mock_session, "https://bank.example.com/dead")
+        result = await validate_page(mock_session, "https://bank.example.com/dead")
         assert result["valid"] is False
         assert "404" in result["error"]
 
@@ -377,36 +375,36 @@ class TestValidateUrl:
     async def test_http_200_js_shell_is_invalid(self, mocker):
         """A page returning 200 but only a JS redirect shell (<500 bytes, no links)
         should be flagged as likely JS-rendered."""
-        from noobanks.sources.webutils import validate_url
+        from noobanks.sources.webutils import validate_page
 
         mock_session = self._mock_session_get(
             mocker, 200,
             '<html><body><script>window.location="/"</script></body></html>',
         )
-        result = await validate_url(mock_session, "https://www.icbc.com.cn/ir")
+        result = await validate_page(mock_session, "https://www.icbc.com.cn/ir")
         assert result["valid"] is False
         assert "js" in result["error"].lower() or "shell" in result["error"].lower()
 
     @pytest.mark.asyncio
     async def test_http_500_is_invalid(self, mocker):
         """Server errors should be invalid."""
-        from noobanks.sources.webutils import validate_url
+        from noobanks.sources.webutils import validate_page
 
         mock_session = self._mock_session_get(mocker, 500, "Internal Server Error")
-        result = await validate_url(mock_session, "https://bank.example.com/broken")
+        result = await validate_page(mock_session, "https://bank.example.com/broken")
         assert result["valid"] is False
         assert "500" in result["error"]
 
     @pytest.mark.asyncio
     async def test_network_error_is_invalid(self, mocker):
         """Network/connection errors should be caught and reported."""
-        from noobanks.sources.webutils import validate_url
+        from noobanks.sources.webutils import validate_page
         from aiohttp import ClientConnectionError
 
         mock_session = mocker.MagicMock()
         mock_session.get.side_effect = ClientConnectionError("Connection refused")
 
-        result = await validate_url(mock_session, "https://nonexistent.example.com")
+        result = await validate_page(mock_session, "https://nonexistent.example.com")
         assert result["valid"] is False
         assert "connection" in result["error"].lower()
 
@@ -534,7 +532,7 @@ class TestDdgsDiscoverUrl:
             ],
         )
         mocker.patch(
-            "noobanks.sources.ddgs_adapter.verify_url",
+            "noobanks.sources.ddgs_adapter.validate_doc_url",
             return_value={"status": 200, "content_type": "application/pdf", "content_length": 500000},
         )
         mocker.patch(
@@ -569,7 +567,7 @@ class TestDdgsDiscoverUrl:
             ],
         )
         mocker.patch(
-            "noobanks.sources.ddgs_adapter.verify_url",
+            "noobanks.sources.ddgs_adapter.validate_doc_url",
             return_value={"status": 200, "content_type": "application/pdf", "content_length": 500000},
         )
         mocker.patch(
@@ -878,7 +876,7 @@ class TestCompositeAdapterInit:
         assert adapter.rate_limit_delay == 1.0
 
     def test_custom_adapters_override_default_chain(self):
-        from noobanks.sources.base import SourceAdapter
+        from noobanks.sources.base_adapter import SourceAdapter
 
         class DummyAdapter(SourceAdapter):
             async def discover_url(self, bank, report_type, year, period="FY"):

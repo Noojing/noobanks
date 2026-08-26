@@ -130,7 +130,7 @@ def extract_nav_links(html: str, base_url: str) -> list[str]:
     return links
 
 
-async def validate_url(
+async def validate_page(
     session: aiohttp.ClientSession,
     url: str,
     rate_limiter: Optional[Callable[[str], Awaitable[None]]] = None,
@@ -181,7 +181,7 @@ async def validate_url(
         }
 
 
-async def verify_url(
+async def validate_doc_url(
     url: str,
     session: Optional[aiohttp.ClientSession] = None,
 ) -> Optional[dict]:

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from noobanks.config.models import BankSpec
-from noobanks.sources.base import (
+from noobanks.sources.base_adapter import (
     DEFAULT_USER_AGENT,
     SourceAdapter,
 )

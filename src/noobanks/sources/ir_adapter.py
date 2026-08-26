@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from noobanks.config.models import BankSpec
-from noobanks.sources.base import (
+from noobanks.sources.base_adapter import (
     DEFAULT_USER_AGENT,
     SourceAdapter,
 )
@@ -15,7 +15,7 @@ from noobanks.sources.webutils import (
     crawl_pdf_link,
     make_browser_page_getter,
     make_static_page_getter,
-    verify_url,
+    validate_doc_url,
 )
 from noobanks.sources.scoring import score_candidate
 from noobanks.storage.store import DEFAULT_DATA_DIR
@@ -68,7 +68,7 @@ class IrAdapter(SourceAdapter):
         static_getter = make_static_page_getter(session)
 
         async def _validator(url: str):
-            return await verify_url(url, session=session)
+            return await validate_doc_url(url, session=session)
 
         crawl_result = await crawl_pdf_link(
             ir_base, report_type, year_str,

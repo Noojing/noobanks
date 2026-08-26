@@ -11,7 +11,7 @@ import aiohttp
 from ddgs import DDGS
 
 from noobanks.config.models import BankSpec
-from noobanks.sources.base import (
+from noobanks.sources.base_adapter import (
     DEFAULT_USER_AGENT,
     SourceAdapter,
 )
@@ -20,7 +20,7 @@ from noobanks.sources.scoring import score_candidate
 from noobanks.sources.webutils import (
     crawl_pdf_link, 
     make_static_page_getter, 
-    verify_url
+    validate_doc_url
 )
 from noobanks.storage.store import DEFAULT_DATA_DIR
 
@@ -99,7 +99,7 @@ class DdgsAdapter(SourceAdapter):
                 continue
 
             if href.lower().endswith(".pdf"):
-                verified = await verify_url(href, session=session)
+                verified = await validate_doc_url(href, session=session)
                 if verified is not None:
                     link_text = result.get("title", "")
                     s = score_candidate(
