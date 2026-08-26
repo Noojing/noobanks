@@ -29,7 +29,11 @@ def sample_bank_spec(sample_source_config: SourceConfig) -> BankSpec:
         exchange="LSE",
         market="UK",
         sources=sample_source_config,
-        filings=["annual_report", "interim_report", "quarterly_report"],
+        filings={
+            "annual_report": ["FY"],
+            "interim_report": ["H1", "H2"],
+            "quarterly_report": ["Q1", "Q2", "Q3", "Q4"],
+        },
     )
 
 
@@ -42,7 +46,11 @@ def sample_us_bank_spec() -> BankSpec:
         market="US",
         cik="0000019617",
         sources=SourceConfig(investor_relations="https://www.jpmorganchase.com/ir"),
-        filings=["10-K", "10-Q", "8-K"],
+        filings={
+            "10-K": ["FY"],
+            "10-Q": ["Q1", "Q2", "Q3", "Q4"],
+            "8-K": ["FY"],
+        },
     )
 
 
@@ -56,7 +64,11 @@ def sample_cn_bank_spec() -> BankSpec:
         sources=SourceConfig(
             investor_relations="https://www.icbc-ltd.com/en/page/1220435982957096960.html",
         ),
-        filings=["annual_report", "interim_report", "quarterly_report"],
+        filings={
+            "annual_report": ["FY"],
+            "interim_report": ["H1", "H2"],
+            "quarterly_report": ["Q1", "Q2", "Q3", "Q4"],
+        },
     )
 
 
@@ -84,7 +96,9 @@ def tmp_yaml_config(tmp_path: Path) -> Path:
                 "sources": {
                     "investor_relations": "https://test.bank/ir",
                 },
-                "filings": ["annual_report"],
+                "filings": {
+                    "annual_report": ["FY"],
+                },
             }
         ]
     }

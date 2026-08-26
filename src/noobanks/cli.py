@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import logging
 import os
 import time
@@ -88,24 +89,55 @@ def _run_async(coro):
     return asyncio.run(coro)
 
 
+def _resolve_filings(
+    bank: BankSpec,
+    year: Optional[int],
+    report_type: Optional[str],
+    period: Optional[str],
+) -> tuple[int, list[tuple[str, str]]]:
+    """Resolve user input into concrete (year, report_type, period) specs.
+
+    Resolution rules:
+    - *year* not specified → last year (current year − 1)
+    - *report_type* not specified → all report types defined on the bank
+    - *period* not specified → all applicable periods for each type
+    """
+    resolved_year = year if year is not None else datetime.datetime.now().year - 1
+    specs = bank.filing_specs(report_type=report_type, period=period)
+    return resolved_year, specs
+
+
 # ── fetch ──────────────────────────────────────────────────────────────────
 
 @fetch_app.command(name="bank")
 def fetch_bank(
     ticker: str = typer.Argument(..., help="Bank ticker (e.g. BARC.L, JPM, 601398.SH)"),
-    report_type: str = typer.Option(
-        "annual_report", "--type", "-t",
-        help="Report type: annual_report, 10-K, 10-Q, 8-K, 6-K, interim_report, quarterly_report, pillar3",
+    report_type: Optional[str] = typer.Option(
+        None, "--type", "-t",
+        help="Report type (e.g. annual_report, 10-K, 10-Q). If omitted, fetches all types.",
     ),
-    year: int = typer.Option(2025, "--year", "-y", help="Fiscal year of the report"),
-    period: str = typer.Option("FY", "--period", "-p", help="Period: FY, Q1-Q4, H1, H2"),
+    year: Optional[int] = typer.Option(
+        None, "--year", "-y",
+        help="Fiscal year. If omitted, defaults to last year.",
+    ),
+    period: Optional[str] = typer.Option(
+        None, "--period", "-p",
+        help="Period within type (e.g. FY, Q1-Q4, H1). If omitted, fetches all applicable periods.",
+    ),
     force: bool = typer.Option(False, "--force", "-f", help="Re-download even if exists"),
     data_dir: Path = typer.Option(
         DEFAULT_DATA_DIR, "--data-dir", "-d",
         help="Base data directory (default: ~/.noobanks/data)",
     ),
 ) -> None:
-    """Download a financial report for a specific bank."""
+    """Download financial reports for a specific bank.
+
+    Resolution logic:
+    \b
+    • If --year is omitted, defaults to last year.
+    • If --type is omitted, fetches all report types defined for the bank.
+    • If --period is omitted, fetches all applicable periods for each type.
+    """
     registry = load_bank_registry()
     bank = registry.find(ticker)
     if bank is None:
@@ -113,34 +145,63 @@ def fetch_bank(
         console.print(f"Use [bold]noobanks list banks[/bold] to see available tickers.")
         raise typer.Exit(1)
 
-    console.print(f"Fetching [bold]{bank.name}[/bold] ({bank.ticker}): "
-                  f"{_period_label(report_type, period)} {year}")
+    resolved_year, specs = _resolve_filings(bank, year, report_type, period)
+    if not specs:
+        console.print(f"[yellow]No filings configured for {bank.ticker}[/yellow]")
+        console.print(f"Use [bold]noobanks list banks[/bold] to see available types.")
+        raise typer.Exit(1)
+
+    console.print(f"Fetching [bold]{bank.name}[/bold] ({bank.ticker}) "
+                  f"for {len(specs)} report(s) in {resolved_year}:")
+    for rtype, p in specs:
+        console.print(f"  • {_period_label(rtype, p)} {resolved_year}")
 
     ReportStore(data_dir).ensure_dirs()
-    adapter = CompositeAdapter(data_dir=data_dir)
-    with _timed(f"Fetch {bank.ticker}"):
-        result = _run_async(adapter.fetch(bank, report_type, year, period, force=force))
 
-    if result.report:
+    async def _fetch_all_specs():
+        succeeded, failed = [], []
+        async with CompositeAdapter(data_dir=data_dir) as adapter:
+            for rtype, p in specs:
+                with _timed(f"Fetch {bank.ticker} {rtype} {p}"):
+                    result = await adapter.fetch(
+                        bank, rtype, resolved_year, p, force=force,
+                    )
+                if result.report:
+                    succeeded.append(result)
+                    console.print(
+                        f"  [green]✓[/green] {result.report.filename} "
+                        f"({result.report.size_mb:.1f} MB) "
+                        f"from [dim]{result.report.downloaded_from}[/dim] "
+                        f"→ {result.report.local_path}"
+                    )
+                if result.error:
+                    failed.append(result)
+                    console.print(f"  [red]✗[/red] {rtype} {p}: {result.error}")
+                if not result.report and not result.error:
+                    console.print(f"  [yellow]No results[/yellow] for {rtype} {p}")
+        return succeeded, failed
+
+    succeeded, failed = _run_async(_fetch_all_specs())
+    if len(specs) > 1:
         console.print(
-            f"  [green]✓[/green] {result.report.filename} ({result.report.size_mb:.1f} MB) "
-            f"from [dim]{result.report.downloaded_from}[/dim] "
-            f"→ {result.report.local_path}"
+            f"\n[bold]Summary:[/bold] {len(succeeded)} succeeded, {len(failed)} failed"
         )
-    if result.error:
-        console.print(f"  [red]✗[/red] {result.error}")
-    if not result.report and not result.error:
-        console.print("  [yellow]No results[/yellow]")
 
 
 @fetch_app.command(name="all")
 def fetch_all(
-    report_type: str = typer.Option(
-        "annual_report", "--type", "-t",
-        help="Report type to download for all banks",
+    report_type: Optional[str] = typer.Option(
+        None, "--type", "-t",
+        help="Report type to download. If omitted, fetches all types for each bank.",
     ),
-    year: int = typer.Option(2025, "--year", "-y", help="Fiscal year"),
-    period: str = typer.Option("FY", "--period", "-p", help="Period"),
+    year: Optional[int] = typer.Option(
+        None, "--year", "-y",
+        help="Fiscal year. If omitted, defaults to last year.",
+    ),
+    period: Optional[str] = typer.Option(
+        None, "--period", "-p",
+        help="Period within type. If omitted, fetches all applicable periods.",
+    ),
     market: Optional[str] = typer.Option(
         None, "--market", "-m", help="Filter by market: US, CN, HK, UK"
     ),
@@ -154,47 +215,65 @@ def fetch_all(
         help="Max concurrent bank fetches",
     ),
 ) -> None:
-    """Download reports for all configured banks."""
+    """Download reports for all configured banks.
+
+    Resolution logic is applied per bank:
+    \b
+    • If --year is omitted, defaults to last year.
+    • If --type is omitted, fetches all report types defined for each bank.
+    • If --period is omitted, fetches all applicable periods for each type.
+    """
     registry = load_bank_registry()
     banks = registry.by_market(market) if market else list(registry.banks)
+    resolved_year = year if year is not None else datetime.datetime.now().year - 1
 
-    console.print(f"Fetching [bold]{_period_label(report_type, period)} {year}[/bold] "
-                  f"for {len(banks)} banks (up to {max_concurrent} concurrent)...")
+    console.print(
+        f"Fetching reports for {len(banks)} banks in {resolved_year} "
+        f"(up to {max_concurrent} concurrent)..."
+    )
     ReportStore(data_dir).ensure_dirs()
-    adapter = CompositeAdapter(data_dir=data_dir)
 
     async def _fetch_all():
-        sem = asyncio.Semaphore(max_concurrent)
-        succeeded, failed = [], []
+        async with CompositeAdapter(data_dir=data_dir) as adapter:
+            sem = asyncio.Semaphore(max_concurrent)
+            succeeded, failed = [], []
 
-        async def _fetch_one(bank: BankSpec):
-            async with sem:
-                result = await adapter.fetch(
-                    bank, report_type, year, period, force=force,
-                )
-                return bank, result
+            async def _fetch_one(bank: BankSpec):
+                async with sem:
+                    _, specs = _resolve_filings(bank, year, report_type, period)
+                    bank_ok, bank_fail = [], []
+                    for rtype, p in specs:
+                        result = await adapter.fetch(
+                            bank, rtype, resolved_year, p, force=force,
+                        )
+                        if result.report:
+                            bank_ok.append(result)
+                        if result.error:
+                            bank_fail.append(result)
+                    return bank, bank_ok, bank_fail
 
-        tasks = [_fetch_one(bank) for bank in banks]
-        completed = 0
-        total = len(banks)
+            tasks = [_fetch_one(bank) for bank in banks]
+            completed = 0
+            total = len(banks)
 
-        try:
             for coro in asyncio.as_completed(tasks):
-                bank, result = await coro
+                bank, bank_ok, bank_fail = await coro
                 completed += 1
+                succeeded.extend(bank_ok)
+                failed.extend(bank_fail)
                 prefix = f"  [{completed}/{total}] {bank.ticker} ({bank.name})"
-                if result.report:
-                    succeeded.append(result)
+                if bank_ok:
                     console.print(
-                        f"{prefix} [green]✓[/green] {result.report.filename} "
-                        f"({result.report.size_mb:.1f} MB) "
-                        f"from [dim]{result.report.downloaded_from}[/dim]"
+                        f"{prefix} [green]✓[/green] "
+                        f"{len(bank_ok)} report(s) downloaded"
                     )
-                else:
-                    failed.append(result)
-                    console.print(f"{prefix} [red]✗[/red] {result.error}")
-        finally:
-            await adapter.close()
+                if bank_fail:
+                    console.print(
+                        f"{prefix} [red]✗[/red] "
+                        f"{len(bank_fail)} report(s) failed"
+                    )
+                if not bank_ok and not bank_fail:
+                    console.print(f"{prefix} [dim]no filings configured[/dim]")
 
         return succeeded, failed
 
@@ -500,12 +579,16 @@ def list_banks(
         table.add_column("Filings", style="dim")
 
         for bank in banks:
+            filing_strs = [
+                f"{rt}: [{', '.join(ps)}]"
+                for rt, ps in bank.filings.items()
+            ]
             table.add_row(
                 bank.ticker,
                 bank.name,
                 bank.market,
                 bank.exchange,
-                ", ".join(bank.filings),
+                "; ".join(filing_strs),
             )
 
     console.print(table)

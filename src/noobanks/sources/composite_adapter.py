@@ -107,3 +107,11 @@ class CompositeAdapter(SourceAdapter):
             bank.ticker, report_type, year,
         )
         return None
+
+    async def __aenter__(self) -> "CompositeAdapter":
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        for adapter in self.adapters:
+            await adapter.__aexit__(*exc_info)
+        await super().__aexit__(*exc_info)

@@ -32,7 +32,7 @@ def _make_bank(ticker: str = "BARC.L", market: str = "UK", **kwargs) -> BankSpec
         "sources": SourceConfig(
             investor_relations=f"https://{ticker.lower().replace('.', '-')}.example.com/ir"
         ),
-        "filings": ["annual_report"],
+        "filings": {"annual_report": ["FY"]},
     }
     defaults.update(kwargs)
     return BankSpec(**defaults)
@@ -420,7 +420,7 @@ class TestDdgsDiscoverUrl:
             exchange="SSE",
             market="CN",
             sources=SourceConfig(investor_relations="https://example.com/ir"),
-            filings=["annual_report"],
+            filings={"annual_report": ["FY"]},
         )
         label = REPORT_TYPE_LABELS.get("annual_report", "annual report")
         query = f"{bank.name} 2025 {label} financial report PDF"
@@ -441,7 +441,7 @@ class TestDdgsDiscoverUrl:
             exchange="LSE",
             market="UK",
             sources=SourceConfig(investor_relations="https://test.example.com/ir"),
-            filings=["annual_report"],
+            filings={"annual_report": ["FY"]},
         )
         adapter = DdgsAdapter()
 
@@ -477,7 +477,7 @@ class TestDdgsDiscoverUrl:
             exchange="LSE",
             market="UK",
             sources=SourceConfig(investor_relations="https://test.example.com/ir"),
-            filings=["annual_report"],
+            filings={"annual_report": ["FY"]},
         )
         adapter = DdgsAdapter()
 
@@ -511,7 +511,7 @@ class TestDdgsDiscoverUrl:
             exchange="LSE",
             market="UK",
             sources=SourceConfig(investor_relations="https://nope.example.com/ir"),
-            filings=["annual_report"],
+            filings={"annual_report": ["FY"]},
         )
         adapter = DdgsAdapter()
 
@@ -531,7 +531,7 @@ class TestDdgsDiscoverUrl:
             exchange="SSE",
             market="CN",
             sources=SourceConfig(investor_relations="https://www.icbc-ltd.com/en/page/1220.html"),
-            filings=["annual_report"],
+            filings={"annual_report": ["FY"]},
         )
         adapter = CompositeAdapter()
 
@@ -556,7 +556,7 @@ class TestDdgsDiscoverUrl:
             exchange="LSE",
             market="UK",
             sources=SourceConfig(investor_relations="https://home.barclays/investor-relations"),
-            filings=["annual_report"],
+            filings={"annual_report": ["FY"]},
         )
         adapter = CompositeAdapter()
 
@@ -590,7 +590,7 @@ class TestIrAdapterDiscoverUrl:
             exchange="SSE",
             market="CN",
             sources=SourceConfig(investor_relations=ir_url),
-            filings=["annual_report"],
+            filings={"annual_report": ["FY"]},
         )
 
     @pytest.mark.asyncio

@@ -22,7 +22,7 @@ class BankSpec(BaseModel):
     market: str  # US, CN, HK, UK
     cik: Optional[str] = None
     sources: SourceConfig
-    filings: list[str] = Field(default_factory=list)
+    filings: dict[str, list[str]] = Field(default_factory=dict)
 
     @property
     def ticker_safe(self) -> str:
@@ -36,6 +36,39 @@ class BankSpec(BaseModel):
 
         parsed = urlparse(self.sources.investor_relations)
         return parsed.netloc or ""
+
+    @property
+    def report_types(self) -> list[str]:
+        """Return list of report type keys for this bank."""
+        return list(self.filings.keys())
+
+    def periods_for(self, report_type: str) -> list[str]:
+        """Return applicable periods for a given report type."""
+        return self.filings.get(report_type, [])
+
+    def filing_specs(
+        self,
+        report_type: Optional[str] = None,
+        period: Optional[str] = None,
+    ) -> list[tuple[str, str]]:
+        """Yield (report_type, period) tuples, optionally filtered.
+
+        - When neither *report_type* nor *period* is given, returns all
+          combinations from the filings map.
+        - When *report_type* is given, returns only that type's periods
+          (or all types' periods when *report_type* is not found — a no-op
+          filter is applied).
+        - When *period* is given, returns only combos whose period matches.
+        """
+        specs: list[tuple[str, str]] = []
+        for rtype, periods in self.filings.items():
+            if report_type is not None and rtype != report_type:
+                continue
+            for p in periods:
+                if period is not None and p != period:
+                    continue
+                specs.append((rtype, p))
+        return specs
 
 
 class BankRegistry(BaseModel):

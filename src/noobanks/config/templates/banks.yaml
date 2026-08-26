@@ -4,7 +4,7 @@
 #   ticker  — primary exchange ticker (Bloomberg/Reuters convention)
 #   CIK     — SEC Central Index Key (10-digit, zero-padded; US-listed only)
 #   sources — where to fetch reports (IR page URLs)
-#   filings — expected report types (SEC form types for US; generic labels otherwise)
+#   filings — map of report_type → applicable periods
 # ---------------------------------------------------------------------------
 
 banks:
@@ -16,7 +16,10 @@ banks:
     cik: "0000019617"
     sources:
       investor_relations: https://www.jpmorganchase.com/ir
-    filings: [10-K, 10-Q, 8-K]
+    filings:
+      10-K: [FY]
+      10-Q: [Q1, Q2, Q3, Q4]
+      8-K: [FY]
 
   - name: Bank of America Corp.
     ticker: BAC
@@ -25,7 +28,10 @@ banks:
     cik: "0000070858"
     sources:
       investor_relations: https://investor.bankofamerica.com
-    filings: [10-K, 10-Q, 8-K]
+    filings:
+      10-K: [FY]
+      10-Q: [Q1, Q2, Q3, Q4]
+      8-K: [FY]
 
   - name: Citigroup Inc.
     ticker: C
@@ -34,7 +40,10 @@ banks:
     cik: "0000831001"
     sources:
       investor_relations: https://www.citigroup.com/global/investors
-    filings: [10-K, 10-Q, 8-K]
+    filings:
+      10-K: [FY]
+      10-Q: [Q1, Q2, Q3, Q4]
+      8-K: [FY]
 
   - name: Wells Fargo & Company
     ticker: WFC
@@ -43,7 +52,10 @@ banks:
     cik: "0000072971"
     sources:
       investor_relations: https://www.wellsfargo.com/about/investor-relations
-    filings: [10-K, 10-Q, 8-K]
+    filings:
+      10-K: [FY]
+      10-Q: [Q1, Q2, Q3, Q4]
+      8-K: [FY]
 
   - name: Goldman Sachs Group Inc.
     ticker: GS
@@ -52,7 +64,10 @@ banks:
     cik: "0000886982"
     sources:
       investor_relations: https://www.goldmansachs.com/investor-relations
-    filings: [10-K, 10-Q, 8-K]
+    filings:
+      10-K: [FY]
+      10-Q: [Q1, Q2, Q3, Q4]
+      8-K: [FY]
 
   - name: Morgan Stanley
     ticker: MS
@@ -61,7 +76,10 @@ banks:
     cik: "0000895421"
     sources:
       investor_relations: https://www.morganstanley.com/about-us-ir
-    filings: [10-K, 10-Q, 8-K]
+    filings:
+      10-K: [FY]
+      10-Q: [Q1, Q2, Q3, Q4]
+      8-K: [FY]
 
   # ── China Mainland (SSE / SZSE) ───────────────────────────────────────
   - name: Industrial & Commercial Bank of China (ICBC)
@@ -70,7 +88,10 @@ banks:
     market: CN
     sources:
       investor_relations: https://www.icbc-ltd.com/en/column/1438058343653851171.html
-    filings: [annual_report, interim_report, quarterly_report]
+    filings:
+      annual_report: [FY]
+      interim_report: [H1, H2]
+      quarterly_report: [Q1, Q2, Q3, Q4]
 
   - name: China Construction Bank (CCB)
     ticker: "601939.SH"
@@ -78,7 +99,10 @@ banks:
     market: CN
     sources:
       investor_relations: https://www.ccb.com/eng/investor/performancereports/annual_reports/index.shtml
-    filings: [annual_report, interim_report, quarterly_report]
+    filings:
+      annual_report: [FY]
+      interim_report: [H1, H2]
+      quarterly_report: [Q1, Q2, Q3, Q4]
 
   - name: Agricultural Bank of China (ABC)
     ticker: "601288.SH"
@@ -86,7 +110,10 @@ banks:
     market: CN
     sources:
       investor_relations: https://www.abchina.com/en/investor-relations/performance-reports/
-    filings: [annual_report, interim_report, quarterly_report]
+    filings:
+      annual_report: [FY]
+      interim_report: [H1, H2]
+      quarterly_report: [Q1, Q2, Q3, Q4]
 
   - name: Bank of China (BOC)
     ticker: "601988.SH"
@@ -94,7 +121,10 @@ banks:
     market: CN
     sources:
       investor_relations: https://www.boc.cn/en/investor
-    filings: [annual_report, interim_report, quarterly_report]
+    filings:
+      annual_report: [FY]
+      interim_report: [H1, H2]
+      quarterly_report: [Q1, Q2, Q3, Q4]
 
   - name: Bank of Communications (BoCom)
     ticker: "601328.SH"
@@ -102,7 +132,10 @@ banks:
     market: CN
     sources:
       investor_relations: https://www.bankcomm.com/BankCommSite/shtml/jyjr/cn/7768/7771/list.shtml?channelId=7768
-    filings: [annual_report, interim_report, quarterly_report]
+    filings:
+      annual_report: [FY]
+      interim_report: [H1, H2]
+      quarterly_report: [Q1, Q2, Q3, Q4]
 
   - name: Postal Savings Bank of China (PSBC)
     ticker: "601658.SH"
@@ -110,7 +143,10 @@ banks:
     market: CN
     sources:
       investor_relations: https://www.psbc.com/en/investor_relations/finance/financial_reports/
-    filings: [annual_report, interim_report, quarterly_report]
+    filings:
+      annual_report: [FY]
+      interim_report: [H1, H2]
+      quarterly_report: [Q1, Q2, Q3, Q4]
 
   - name: China Merchants Bank (CMB)
     ticker: "600036.SH"
@@ -118,7 +154,10 @@ banks:
     market: CN
     sources:
       investor_relations: https://english.cmbchina.com/Cmbir/intro.aspx?type=report
-    filings: [annual_report, interim_report, quarterly_report]
+    filings:
+      annual_report: [FY]
+      interim_report: [H1, H2]
+      quarterly_report: [Q1, Q2, Q3, Q4]
 
   - name: Ping An Bank Co. Ltd.
     ticker: "000001.SZ"
@@ -126,7 +165,10 @@ banks:
     market: CN
     sources:
       investor_relations: http://bank.pingan.com/en/touzizheguanxijixinwen.shtml
-    filings: [annual_report, interim_report, quarterly_report]
+    filings:
+      annual_report: [FY]
+      interim_report: [H1, H2]
+      quarterly_report: [Q1, Q2, Q3, Q4]
 
   - name: Hangzhou Bank Co. Ltd.
     ticker: "600926.SH"
@@ -134,24 +176,22 @@ banks:
     market: CN
     sources:
       investor_relations: https://www.hzbank.com.cn/hzyh/tzzgx/dqgg/index.html
-    filings: [annual_report, interim_report, quarterly_report]
+    filings:
+      annual_report: [FY]
+      interim_report: [H1, H2]
+      quarterly_report: [Q1, Q2, Q3, Q4]
 
   # ── Hong Kong (HKEX) ──────────────────────────────────────────────────
-  - name: HSBC Holdings plc
-    ticker: "00005.HK"
-    exchange: HKEX
-    market: HK
-    sources:
-      investor_relations: https://www.hsbc.com/investors
-    filings: [annual_report, interim_report, quarterly_report]
-
   - name: Bank of China (Hong Kong) Ltd.
     ticker: "02388.HK"
     exchange: HKEX
     market: HK
     sources:
       investor_relations: https://www.bochk.com/en/aboutus/ir.html
-    filings: [annual_report, interim_report, quarterly_report]
+    filings:
+      annual_report: [FY]
+      interim_report: [H1, H2]
+      quarterly_report: [Q1, Q2, Q3, Q4]
 
   - name: Hang Seng Bank Ltd.
     ticker: "00011.HK"
@@ -159,7 +199,10 @@ banks:
     market: HK
     sources:
       investor_relations: https://www.hangseng.com/en-hk/about-us/investor-relations
-    filings: [annual_report, interim_report, quarterly_report]
+    filings:
+      annual_report: [FY]
+      interim_report: [H1, H2]
+      quarterly_report: [Q1, Q2, Q3, Q4]
 
   - name: Standard Chartered PLC
     ticker: "02888.HK"
@@ -167,7 +210,10 @@ banks:
     market: HK
     sources:
       investor_relations: https://www.sc.com/en/investors
-    filings: [annual_report, interim_report, quarterly_report]
+    filings:
+      annual_report: [FY]
+      interim_report: [H1, H2]
+      quarterly_report: [Q1, Q2, Q3, Q4]
 
   - name: Bank of East Asia Ltd.
     ticker: "00023.HK"
@@ -175,7 +221,10 @@ banks:
     market: HK
     sources:
       investor_relations: https://www.hkbea.com/html/en/bea-about-bea-investor-communication.html
-    filings: [annual_report, interim_report, quarterly_report]
+    filings:
+      annual_report: [FY]
+      interim_report: [H1, H2]
+      quarterly_report: [Q1, Q2, Q3, Q4]
 
   - name: Dah Sing Financial Holdings Ltd.
     ticker: "00440.HK"
@@ -183,7 +232,10 @@ banks:
     market: HK
     sources:
       investor_relations: https://www.dahsing.com/en/about-us/investor-relations
-    filings: [annual_report, interim_report, quarterly_report]
+    filings:
+      annual_report: [FY]
+      interim_report: [H1, H2]
+      quarterly_report: [Q1, Q2, Q3, Q4]
 
   # ── United Kingdom (LSE) ──────────────────────────────────────────────
   - name: HSBC Holdings plc
@@ -191,8 +243,11 @@ banks:
     exchange: LSE
     market: UK
     sources:
-      investor_relations: https://www.hsbc.com/investors
-    filings: [annual_report, interim_report, quarterly_report]
+      investor_relations: https://www.hsbc.com/investors/results-and-announcements/all-reporting/group?&page=1&take=100
+    filings:
+      annual_report: [FY]
+      interim_report: [H1]
+      quarterly_report: [Q1, Q3]
 
   - name: Barclays PLC
     ticker: BARC.L
@@ -200,7 +255,11 @@ banks:
     market: UK
     sources:
       investor_relations: https://home.barclays/investor-relations/reports-and-events
-    filings: [annual_report, interim_report, quarterly_report, 6-K]
+    filings:
+      annual_report: [FY]
+      interim_report: [H1, H2]
+      quarterly_report: [Q1, Q2, Q3, Q4]
+      6-K: [FY]
 
   - name: Lloyds Banking Group plc
     ticker: LLOY.L
@@ -208,7 +267,10 @@ banks:
     market: UK
     sources:
       investor_relations: https://www.lloydsbankinggroup.com/investors
-    filings: [annual_report, interim_report, quarterly_report]
+    filings:
+      annual_report: [FY]
+      interim_report: [H1, H2]
+      quarterly_report: [Q1, Q2, Q3, Q4]
 
   - name: NatWest Group plc
     ticker: NWG.L
@@ -216,7 +278,10 @@ banks:
     market: UK
     sources:
       investor_relations: https://www.natwestgroup.com/investors.html
-    filings: [annual_report, interim_report, quarterly_report]
+    filings:
+      annual_report: [FY]
+      interim_report: [H1, H2]
+      quarterly_report: [Q1, Q2, Q3, Q4]
 
   - name: Standard Chartered PLC
     ticker: STAN.L
@@ -224,4 +289,7 @@ banks:
     market: UK
     sources:
       investor_relations: https://www.sc.com/en/investors
-    filings: [annual_report, interim_report, quarterly_report]
+    filings:
+      annual_report: [FY]
+      interim_report: [H1, H2]
+      quarterly_report: [Q1, Q2, Q3, Q4]

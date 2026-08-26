@@ -128,8 +128,10 @@ class SourceAdapter(ABC):
             self._shared_session = session
         return session
 
-    async def close(self) -> None:
-        """Close the shared session and release its connection pool."""
+    async def __aenter__(self) -> "SourceAdapter":
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
         session = getattr(self, "_shared_session", None)
         if session is not None and not session.closed:
             await session.close()

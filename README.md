@@ -97,8 +97,7 @@ uv run pytest tests/ -q --cov=noobanks
 CI runs on Python 3.14 via GitHub Actions (`.github/workflows/ci.yml`).
 
 ## TODO
-- _rate_limit: 1) reduce time; 2) allocate to utils
-- period determines applicable report type(s)
+- parallelise search of multiple reports if needed for the same bank
 
 ### Metrics:
 - Allowance Coverage Ratio: Loan Loss Reserves / Non-Performing Loans × 100%)

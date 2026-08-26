@@ -26,6 +26,14 @@ class TestBankSpec:
         assert sample_bank_spec.market == "UK"
         assert sample_bank_spec.cik is None
         assert len(sample_bank_spec.filings) == 3
+        assert sample_bank_spec.report_types == [
+            "annual_report", "interim_report", "quarterly_report",
+        ]
+        assert sample_bank_spec.periods_for("annual_report") == ["FY"]
+        assert sample_bank_spec.periods_for("quarterly_report") == [
+            "Q1", "Q2", "Q3", "Q4",
+        ]
+        assert sample_bank_spec.periods_for("nonexistent") == []
 
     def test_ticker_safe_replaces_dots(self, sample_bank_spec: BankSpec):
         assert sample_bank_spec.ticker_safe == "BARC_L"
@@ -57,7 +65,34 @@ class TestBankSpec:
             market="XX",
             sources=SourceConfig(investor_relations="https://example.com"),
         )
-        assert bank.filings == []
+        assert bank.filings == {}
+        assert bank.report_types == []
+        assert bank.filing_specs() == []
+
+    def test_filing_specs_all(self, sample_bank_spec: BankSpec):
+        specs = sample_bank_spec.filing_specs()
+        assert len(specs) == 7  # 1 annual + 2 interim + 4 quarterly
+        assert ("annual_report", "FY") in specs
+        assert ("quarterly_report", "Q1") in specs
+        assert ("quarterly_report", "Q4") in specs
+
+    def test_filing_specs_filter_by_type(self, sample_bank_spec: BankSpec):
+        specs = sample_bank_spec.filing_specs(report_type="annual_report")
+        assert specs == [("annual_report", "FY")]
+
+    def test_filing_specs_filter_by_period(self, sample_bank_spec: BankSpec):
+        specs = sample_bank_spec.filing_specs(period="Q1")
+        assert specs == [("quarterly_report", "Q1")]
+
+    def test_filing_specs_filter_by_type_and_period(self, sample_bank_spec: BankSpec):
+        specs = sample_bank_spec.filing_specs(
+            report_type="quarterly_report", period="Q2",
+        )
+        assert specs == [("quarterly_report", "Q2")]
+
+    def test_filing_specs_no_match(self, sample_bank_spec: BankSpec):
+        specs = sample_bank_spec.filing_specs(report_type="10-K")
+        assert specs == []
 
     def test_optional_cik(self, sample_us_bank_spec: BankSpec):
         assert sample_us_bank_spec.cik == "0000019617"
