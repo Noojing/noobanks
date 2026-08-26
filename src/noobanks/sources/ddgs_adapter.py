@@ -121,7 +121,7 @@ class DdgsAdapter(SourceAdapter):
             try:
                 page_pdf = await crawl_pdf_link(
                     href, report_type, year_str,
-                    page_getter=static_getter,
+                    page_getters=[static_getter],
                 )
                 if page_pdf is not None:
                     pdf_url, _ = page_pdf

@@ -98,9 +98,7 @@ CI runs on Python 3.14 via GitHub Actions (`.github/workflows/ci.yml`).
 
 ## TODO
 - _rate_limit: 1) reduce time; 2) allocate to utils
-- max_depths: validate each link/link; break when first score is satisfactory
-- semaphore
-- timing of each download
+- period determines applicable report type(s)
 
 ### Metrics:
 - Allowance Coverage Ratio: Loan Loss Reserves / Non-Performing Loans × 100%)

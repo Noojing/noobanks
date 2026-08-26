@@ -33,8 +33,9 @@ class IrAdapter(SourceAdapter):
     2. Follow navigation links and scrape those too (BFS up to ``max_depth``)
     3. Each PDF link is scored; only links meeting ``score_threshold`` are kept
     4. High-scoring links are HEAD-verified before being returned
-    5. If the static crawl yields nothing, retry with a headless-browser
-       page getter (Playwright) to render JS-heavy sites
+    5. For each page, a static (aiohttp) page getter is tried first; if the
+       returned HTML is a JS shell the browser (Playwright) getter is used
+       as fallback — all within a single :func:`crawl_pdf_link` call
     6. Returns the **first** valid PDF URL found, or ``None`` if none found
     """
 
@@ -66,6 +67,10 @@ class IrAdapter(SourceAdapter):
 
         session = self._get_session()
         static_getter = make_static_page_getter(session)
+        browser_getter = make_browser_page_getter(
+            timeout=self.timeout,
+            user_agent=self.user_agent,
+        )
 
         async def _validator(url: str):
             return await validate_doc_url(url, session=session)
@@ -73,38 +78,8 @@ class IrAdapter(SourceAdapter):
         crawl_result = await crawl_pdf_link(
             ir_base, report_type, year_str,
             max_depth=2,
-            page_getter=static_getter,
-            rate_limiter=self._rate_limit,
-            score_func=score_candidate,
-            score_threshold=self.score_threshold,
-            validator=_validator,
-            period=period,
-        )
-
-        if crawl_result is not None:
-            url, _ = crawl_result
-            logger.info(
-                "Discovered URL for %s %s %s: %s",
-                bank.ticker, report_type, year, url,
-            )
-            return url
-
-        logger.info(
-            "Static crawl found no valid PDF for %s %s %s — "
-            "trying browser render",
-            bank.ticker, report_type, year,
-        )
-
-        browser_getter = make_browser_page_getter(
-            timeout=self.timeout,
-            user_agent=self.user_agent,
-        )
-
-        crawl_result = await crawl_pdf_link(
-            ir_base, report_type, year_str,
-            max_depth=2,
             max_pages=self.browser_max_pages,
-            page_getter=browser_getter,
+            page_getters=[static_getter, browser_getter],
             rate_limiter=self._rate_limit,
             score_func=score_candidate,
             score_threshold=self.score_threshold,
@@ -121,7 +96,7 @@ class IrAdapter(SourceAdapter):
 
         url, _ = crawl_result
         logger.info(
-            "Discovered URL via browser for %s %s %s: %s",
+            "Discovered URL for %s %s %s: %s",
             bank.ticker, report_type, year, url,
         )
         return url

@@ -330,85 +330,6 @@ class TestExtractPdfLinksAdvanced:
         assert len(links) == 0
 
 
-# ── IR URL validation ─────────────────────────────────────────────────────
-
-
-class TestValidateUrl:
-    """Tests for validate_page — detect dead/broken URLs before crawling."""
-
-    @staticmethod
-    def _mock_session_get(mocker, status: int, body: str):
-        """Build a mock aiohttp session.get() that supports async with."""
-        mock_resp = mocker.MagicMock()
-        mock_resp.status = status
-        mock_resp.text = mocker.AsyncMock(return_value=body)
-        mock_resp.__aenter__ = mocker.AsyncMock(return_value=mock_resp)
-        mock_resp.__aexit__ = mocker.AsyncMock(return_value=None)
-
-        mock_session = mocker.MagicMock()
-        mock_session.get.return_value = mock_resp
-        return mock_session
-
-    @pytest.mark.asyncio
-    async def test_http_200_with_html_is_valid(self, mocker):
-        """A page returning 200 with real HTML content is valid."""
-        from noobanks.sources.webutils import validate_page
-
-        mock_session = self._mock_session_get(
-            mocker, 200,
-            "<html><body><a href='/reports/'>Annual Reports</a></body></html>",
-        )
-        result = await validate_page(mock_session, "https://bank.example.com/ir")
-        assert result["valid"] is True
-
-    @pytest.mark.asyncio
-    async def test_http_404_is_invalid(self, mocker):
-        """HTTP 404 should be reported as invalid with a clear message."""
-        from noobanks.sources.webutils import validate_page
-
-        mock_session = self._mock_session_get(mocker, 404, "<html><body>Not Found</body></html>")
-        result = await validate_page(mock_session, "https://bank.example.com/dead")
-        assert result["valid"] is False
-        assert "404" in result["error"]
-
-    @pytest.mark.asyncio
-    async def test_http_200_js_shell_is_invalid(self, mocker):
-        """A page returning 200 but only a JS redirect shell (<500 bytes, no links)
-        should be flagged as likely JS-rendered."""
-        from noobanks.sources.webutils import validate_page
-
-        mock_session = self._mock_session_get(
-            mocker, 200,
-            '<html><body><script>window.location="/"</script></body></html>',
-        )
-        result = await validate_page(mock_session, "https://www.icbc.com.cn/ir")
-        assert result["valid"] is False
-        assert "js" in result["error"].lower() or "shell" in result["error"].lower()
-
-    @pytest.mark.asyncio
-    async def test_http_500_is_invalid(self, mocker):
-        """Server errors should be invalid."""
-        from noobanks.sources.webutils import validate_page
-
-        mock_session = self._mock_session_get(mocker, 500, "Internal Server Error")
-        result = await validate_page(mock_session, "https://bank.example.com/broken")
-        assert result["valid"] is False
-        assert "500" in result["error"]
-
-    @pytest.mark.asyncio
-    async def test_network_error_is_invalid(self, mocker):
-        """Network/connection errors should be caught and reported."""
-        from noobanks.sources.webutils import validate_page
-        from aiohttp import ClientConnectionError
-
-        mock_session = mocker.MagicMock()
-        mock_session.get.side_effect = ClientConnectionError("Connection refused")
-
-        result = await validate_page(mock_session, "https://nonexistent.example.com")
-        assert result["valid"] is False
-        assert "connection" in result["error"].lower()
-
-
 # ── Navigation link extraction ────────────────────────────────────────────
 
 
@@ -673,8 +594,8 @@ class TestIrAdapterDiscoverUrl:
         )
 
     @pytest.mark.asyncio
-    async def test_discover_url_returns_none_when_both_crawls_empty(self, mocker):
-        """When static + browser crawls both find nothing, discover_url returns None."""
+    async def test_discover_url_returns_none_when_crawl_empty(self, mocker):
+        """When the unified crawl finds nothing, discover_url returns None."""
         from noobanks.sources.ir_adapter import IrAdapter
 
         ir_url = "https://www.icbc-ltd.com/en/page/1220.html"
@@ -687,12 +608,11 @@ class TestIrAdapterDiscoverUrl:
 
         url = await adapter.discover_url(self._bank(ir_url), "annual_report", 2025)
         assert url is None
-        assert crawl_mock.call_count == 2
+        assert crawl_mock.call_count == 1
 
     @pytest.mark.asyncio
-    async def test_discover_url_returns_url_when_static_crawl_succeeds(self, mocker):
-        """When the static crawl finds a PDF, discover_url returns it directly
-        without attempting the browser fallback."""
+    async def test_discover_url_returns_url_when_crawl_succeeds(self, mocker):
+        """When crawl_pdf_link finds a PDF, discover_url returns it directly."""
         from noobanks.sources.ir_adapter import IrAdapter
 
         adapter = IrAdapter()
@@ -709,22 +629,26 @@ class TestIrAdapterDiscoverUrl:
         assert crawl_mock.call_count == 1
 
     @pytest.mark.asyncio
-    async def test_discover_url_falls_back_to_browser_when_static_empty(self, mocker):
-        """When the static crawl yields nothing, the browser crawl is tried."""
+    async def test_discover_url_passes_both_getters_to_crawl(self, mocker):
+        """Both static and browser getters are passed as page_getters."""
         from noobanks.sources.ir_adapter import IrAdapter
 
         adapter = IrAdapter()
-        browser_result = ("https://www.icbc.com.cn/en/2024-annual-report.pdf", "2024 Annual Report")
+        crawled = ("https://www.icbc.com.cn/en/2024-annual-report.pdf", "2024 Annual Report")
         crawl_mock = mocker.patch(
             "noobanks.sources.ir_adapter.crawl_pdf_link",
-            side_effect=[None, browser_result],
+            return_value=crawled,
         )
 
         url = await adapter.discover_url(
             self._bank("https://www.icbc.com.cn/en/page/1220.html"), "annual_report", 2024
         )
-        assert url == browser_result[0]
-        assert crawl_mock.call_count == 2
+        assert url == crawled[0]
+        assert crawl_mock.call_count == 1
+
+        call_kwargs = crawl_mock.call_args.kwargs
+        page_getters = call_kwargs.get("page_getters", [])
+        assert len(page_getters) == 2
 
     @pytest.mark.asyncio
     async def test_discover_url_passes_scoring_params(self, mocker):

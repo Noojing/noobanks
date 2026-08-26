@@ -130,55 +130,26 @@ def extract_nav_links(html: str, base_url: str) -> list[str]:
     return links
 
 
-async def validate_page(
-    session: aiohttp.ClientSession,
-    url: str,
-    rate_limiter: Optional[Callable[[str], Awaitable[None]]] = None,
-) -> dict[str, bool | str]:
-    """GET-check a URL to verify it returns real HTML (not a JS shell).
+def _validate_html_content(html: str, url: str) -> dict[str, bool | str]:
+    """Check whether *html* contains real page content (not a JS shell)."""
+    html_size = len(html)
+    soup = BeautifulSoup(html, "lxml")
+    link_count = len(soup.find_all("a", href=True))
 
-    Returns ``{"valid": True}`` or ``{"valid": False, "error": "..."}``.
-    """
-    domain = urlparse(url).netloc
-    if rate_limiter:
-        await rate_limiter(domain)
-
-    try:
-        async with session.get(
-            url, allow_redirects=True, max_redirects=3
-        ) as resp:
-            if resp.status != 200:
-                return {
-                    "valid": False,
-                    "error": f"URL returned HTTP {resp.status}: {url}",
-                }
-
-            html = await resp.text(errors="replace")
-            html_size = len(html)
-
-            soup = BeautifulSoup(html, "lxml")
-            link_count = len(soup.find_all("a", href=True))
-
-            if html_size < 1000 and link_count == 0:
-                return {
-                    "valid": False,
-                    "error": (
-                        f"URL appears to be a JS-rendered shell "
-                        f"({html_size} bytes, {link_count} links): {url}"
-                    ),
-                }
-
-            logger.debug(
-                "URL validated: %s (%d bytes, %d links)",
-                url, html_size, link_count,
-            )
-            return {"valid": True}
-
-    except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+    if html_size < 1000 and link_count == 0:
         return {
             "valid": False,
-            "error": f"URL connection failed: {url} — {exc}",
+            "error": (
+                f"URL appears to be a JS-rendered shell "
+                f"({html_size} bytes, {link_count} links): {url}"
+            ),
         }
+
+    logger.debug(
+        "HTML validated: %s (%d bytes, %d links)",
+        url, html_size, link_count,
+    )
+    return {"valid": True}
 
 
 async def validate_doc_url(
@@ -246,7 +217,7 @@ async def crawl_pdf_link(
     *,
     max_depth: int = 0,
     max_pages: Optional[int] = None,
-    page_getter: Callable[[str], Awaitable[Optional[str]]],
+    page_getters: list[Callable[[str], Awaitable[Optional[str]]]],
     rate_limiter: Optional[Callable[[str], Awaitable[None]]] = None,
     score_func: Optional[Callable[..., int]] = None,
     score_threshold: int = 0,
@@ -255,8 +226,9 @@ async def crawl_pdf_link(
 ) -> Optional[tuple[str, str]]:
     """BFS-crawl pages for the first valid PDF link with scoring and optional validation.
 
-    Fetches pages via *page_getter*, extracts PDF and navigation links,
-    and follows nav links breadth-first up to *max_depth*.
+    Fetches pages via *page_getters* (tried in order for each page — the
+    first getter to return non-JS-shell HTML is used), extracts PDF and
+    navigation links, and follows nav links breadth-first up to *max_depth*.
 
     When *score_func* is provided each PDF link is scored; only links whose
     score meets *score_threshold* are considered.  When *validator* is also
@@ -271,7 +243,10 @@ async def crawl_pdf_link(
         year_str: 4-digit year as string (e.g. ``"2025"``).
         max_depth: BFS depth limit (0 = base_url only, 1 = base + nav, ...).
         max_pages: Maximum pages to fetch across all levels.  ``None`` = unlimited.
-        page_getter: Async callable ``(url) -> html`` or ``None`` on failure.
+        page_getters: Ordered list of async callables ``(url) -> html`` or
+            ``None`` on failure.  For each page the getters are tried in
+            sequence; the first one whose HTML passes JS-shell validation
+            is used for link extraction.
         rate_limiter: Optional async callable ``(domain) -> None`` for throttling.
         score_func: Optional scoring callable ``(url, year_str, report_type,
             link_text, period) -> int``.
@@ -304,7 +279,20 @@ async def crawl_pdf_link(
         if rate_limiter:
             await rate_limiter(domain)
 
-        html = await page_getter(url)
+        html = None
+        for getter in page_getters:
+            html = await getter(url)
+            if html is None:
+                continue
+            validation = _validate_html_content(html, url)
+            if validation.get("valid"):
+                break
+            logger.debug(
+                "  [depth %d] %s → getter returned JS shell, trying next",
+                depth, url,
+            )
+            html = None
+
         if html is None:
             continue
         pages_fetched += 1
