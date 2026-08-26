@@ -22,8 +22,6 @@ from tenacity import (
     retry_if_exception_type,
 )
 
-from bs4 import BeautifulSoup
-
 from noobanks.config.models import BankSpec
 from noobanks.storage.store import DEFAULT_DATA_DIR
 
@@ -91,8 +89,6 @@ class SourceAdapter(ABC):
 
     Provides shared infrastructure for all subclasses:
     - :meth:`fetch` — template method: cache check → discover → verify → download
-    - :meth:`verify_url` — HEAD-based PDF validation
-    - :meth:`_validate_ir_url` — GET-based page validation (detects JS shells)
     - :meth:`_rate_limit` — per-domain request throttling
     - :meth:`_download` — reliable PDF download with retry
     """
@@ -104,86 +100,40 @@ class SourceAdapter(ABC):
         timeout: int = 30,
         user_agent: str = DEFAULT_USER_AGENT,
         rate_limit_delay: float = 0.5,
-        max_concurrent: int = 4,
     ):
         self.data_dir = Path(data_dir)
         self.timeout = timeout
         self.user_agent = user_agent
         self.rate_limit_delay = rate_limit_delay
-        self._semaphore = asyncio.Semaphore(max_concurrent)
         self._domain_timers: dict[str, float] = {}
 
     # ── HTTP session helpers ────────────────────────────────────────────
 
     def _get_session(self) -> aiohttp.ClientSession:
-        """Create a new aiohttp client session with configured user-agent.
+        """Return a shared, persistent aiohttp client session.
 
-        The session's SSL context enables ``OP_LEGACY_SERVER_CONNECT`` so
-        that handshakes with servers still using legacy TLS versions
-        (e.g. TLS 1.0 / TLS 1.1) do not fail.
+        The session is created lazily on first use and reused for all
+        subsequent requests.  Call :meth:`close` when the adapter is
+        no longer needed to release the underlying connection pool.
         """
-        ctx = ssl.create_default_context()
-        ctx.options |= ssl.OP_LEGACY_SERVER_CONNECT
-        return aiohttp.ClientSession(
-            headers={"User-Agent": self.user_agent},
-            timeout=aiohttp.ClientTimeout(total=self.timeout),
-            connector = aiohttp.TCPConnector(ssl=ctx),
-        )
+        session = getattr(self, "_shared_session", None)
+        if session is None or session.closed:
+            ctx = ssl.create_default_context()
+            ctx.options |= ssl.OP_LEGACY_SERVER_CONNECT
+            session = aiohttp.ClientSession(
+                headers={"User-Agent": self.user_agent},
+                timeout=aiohttp.ClientTimeout(total=self.timeout),
+                connector=aiohttp.TCPConnector(ssl=ctx),
+            )
+            self._shared_session = session
+        return session
 
-    # ── Unified HEAD verification ───────────────────────────────────────
-
-    async def verify_url(
-        self, url: str, session: Optional[aiohttp.ClientSession] = None,
-    ) -> Optional[dict]:
-        """HEAD-check a URL to verify it points to a valid PDF.
-
-        Args:
-            url: Candidate URL to check.
-            session: Optional shared session; if None a temporary
-                session is created and closed automatically.
-
-        Returns:
-            Dict with ``status``, ``content_type``, ``content_length``
-            if the URL points to a valid PDF, or ``None`` otherwise.
-        """
-        owns_session = session is None
-        if owns_session:
-            session = self._get_session()
-        try:
-            async with session.head(
-                url,
-                timeout=aiohttp.ClientTimeout(total=15),
-                allow_redirects=True,
-                max_redirects=5,
-            ) as resp:
-                content_type = resp.headers.get("Content-Type", "")
-                content_length = resp.headers.get("Content-Length")
-                size = int(content_length) if content_length else 0
-
-                if resp.status != 200:
-                    logger.debug("HEAD %s → HTTP %d", url, resp.status)
-                    return None
-
-                if "pdf" not in content_type.lower() and "octet-stream" not in content_type.lower():
-                    if not url.lower().endswith(".pdf"):
-                        logger.debug("HEAD %s → not PDF (%s)", url, content_type)
-                        return None
-
-                if size > 0 and size < 50_000:
-                    logger.debug("HEAD %s → too small (%d bytes)", url, size)
-                    return None
-
-                return {
-                    "status": resp.status,
-                    "content_type": content_type,
-                    "content_length": size,
-                }
-        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
-            logger.debug("HEAD %s → error: %s", url, exc)
-            return None
-        finally:
-            if owns_session:
-                await session.close()
+    async def close(self) -> None:
+        """Close the shared session and release its connection pool."""
+        session = getattr(self, "_shared_session", None)
+        if session is not None and not session.closed:
+            await session.close()
+            self._shared_session = None
 
     # ── Shared rate-limiting ────────────────────────────────────────────
 
@@ -195,57 +145,6 @@ class SourceAdapter(ABC):
         if wait > 0:
             await asyncio.sleep(wait)
         self._domain_timers[domain] = time.monotonic()
-
-    # ── Shared IR page validation ───────────────────────────────────────
-
-    async def _validate_ir_url(
-        self,
-        session: aiohttp.ClientSession,
-        url: str,
-    ) -> dict[str, bool | str]:
-        """GET-check a page to verify it returns real HTML (not a JS shell).
-
-        Returns ``{"valid": True}`` or ``{"valid": False, "error": "..."}``.
-        """
-        domain = urlparse(url).netloc
-        await self._rate_limit(domain)
-
-        try:
-            async with session.get(
-                url, allow_redirects=True, max_redirects=3
-            ) as resp:
-                if resp.status != 200:
-                    return {
-                        "valid": False,
-                        "error": f"IR URL returned HTTP {resp.status}: {url}",
-                    }
-
-                html = await resp.text(errors="replace")
-                html_size = len(html)
-
-                soup = BeautifulSoup(html, "lxml")
-                link_count = len(soup.find_all("a", href=True))
-
-                if html_size < 1000 and link_count == 0:
-                    return {
-                        "valid": False,
-                        "error": (
-                            f"IR URL appears to be a JS-rendered shell "
-                            f"({html_size} bytes, {link_count} links): {url}"
-                        ),
-                    }
-
-                logger.debug(
-                    "IR URL validated: %s (%d bytes, %d links)",
-                    url, html_size, link_count,
-                )
-                return {"valid": True}
-
-        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
-            return {
-                "valid": False,
-                "error": f"IR URL connection failed: {url} — {exc}",
-            }
 
     # ── Shared download ─────────────────────────────────────────────────
 
@@ -269,22 +168,21 @@ class SourceAdapter(ABC):
         await self._rate_limit(domain)
 
         target.parent.mkdir(parents=True, exist_ok=True)
+        session = self._get_session()
 
-        async with self._semaphore:
-            async with self._get_session() as session:
-                async with session.get(
-                    url, allow_redirects=True, max_redirects=5
-                ) as resp:
-                    if resp.status != 200:
-                        raise aiohttp.ClientResponseError(
-                            request_info=resp.request_info,
-                            history=resp.history,
-                            status=resp.status,
-                            message=f"HTTP {resp.status}",
-                            headers=resp.headers,
-                        )
+        async with session.get(
+            url, allow_redirects=True, max_redirects=5
+        ) as resp:
+            if resp.status != 200:
+                raise aiohttp.ClientResponseError(
+                    request_info=resp.request_info,
+                    history=resp.history,
+                    status=resp.status,
+                    message=f"HTTP {resp.status}",
+                    headers=resp.headers,
+                )
 
-                    content = await resp.read()
+            content = await resp.read()
 
         if len(content) < 4 or content[:4] != b"%PDF":
             raise ValueError(
@@ -325,9 +223,8 @@ class SourceAdapter(ABC):
         """Fetch reports for a bank — template method.
 
         1. Check local cache (skip if already downloaded)
-        2. Call :meth:`discover_urls` for candidate URLs
-        3. HEAD-verify each candidate
-        4. Download the first verified PDF
+        2. Call :meth:`discover_url` for the first valid candidate URL
+        3. Download the verified PDF
         """
         result = FetchResult(bank=bank)
         target = self.target_path(
@@ -342,47 +239,37 @@ class SourceAdapter(ABC):
                 year=year,
                 period=period,
                 local_path=target,
-                downloaded_from="(cached)",
+                downloaded_from="(stored)",
                 file_size=target.stat().st_size,
             )
             return result
 
-        urls = await self.discover_urls(bank, report_type, year, period)
-        if not urls:
+        url = await self.discover_url(bank, report_type, year, period)
+        if url is None:
             result.error = (
-                f"No PDF URLs found for {bank.ticker} {report_type} {year}"
+                f"No PDF URL found for {bank.ticker} {report_type} {year}"
             )
             return result
 
-        for url in urls:
-            verified = await self.verify_url(url)
-            if verified is None:
-                continue
-
-            try:
-                report = await self._download(
-                    url, target, bank, report_type, year, period
-                )
-                result.report = report
-                return result
-            except Exception as exc:
-                logger.warning("Download failed for %s: %s", url, exc)
-                result.error = f"{url}: {exc}"
-
-        if result.report is None:
-            result.error = (
-                f"All {len(urls)} candidate URLs failed for {bank.ticker}"
+        try:
+            report = await self._download(
+                url, target, bank, report_type, year, period
             )
+            result.report = report
+        except Exception as exc:
+            logger.warning("Download failed for %s: %s", url, exc)
+            result.error = f"{url}: {exc}"
+
         return result
 
     # ── Abstract interface ──────────────────────────────────────────────
 
     @abstractmethod
-    async def discover_urls(
+    async def discover_url(
         self, bank: BankSpec, report_type: str, year: int,
         period: str = "FY",
-    ) -> list[str]:
-        """Discover candidate PDF URLs for the given bank/report/year.
+    ) -> Optional[str]:
+        """Discover the first valid PDF URL for the given bank/report/year.
 
         Args:
             bank: Bank specification.
@@ -391,7 +278,7 @@ class SourceAdapter(ABC):
             period: Target period (FY, Q1-Q4, H1, H2).
 
         Returns:
-            List of candidate PDF URLs (unverified).
+            The first valid PDF URL, or ``None`` if none found.
         """
         ...
 

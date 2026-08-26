@@ -149,33 +149,53 @@ def fetch_all(
         DEFAULT_DATA_DIR, "--data-dir", "-d",
         help="Base data directory (default: ~/.noobanks/data)",
     ),
+    max_concurrent: int = typer.Option(
+        5, "--concurrency", "-c",
+        help="Max concurrent bank fetches",
+    ),
 ) -> None:
     """Download reports for all configured banks."""
     registry = load_bank_registry()
     banks = registry.by_market(market) if market else list(registry.banks)
 
     console.print(f"Fetching [bold]{_period_label(report_type, period)} {year}[/bold] "
-                  f"for {len(banks)} banks...")
+                  f"for {len(banks)} banks (up to {max_concurrent} concurrent)...")
     ReportStore(data_dir).ensure_dirs()
     adapter = CompositeAdapter(data_dir=data_dir)
 
     async def _fetch_all():
+        sem = asyncio.Semaphore(max_concurrent)
         succeeded, failed = [], []
-        for i, bank in enumerate(banks):
-            console.print(f"  [{i+1}/{len(banks)}] {bank.ticker} ({bank.name})...")
-            result = await adapter.fetch(bank, report_type, year, period, force=force)
-            if result.report:
-                succeeded.append(result)
-                console.print(
-                    f"    [green]✓[/green] {result.report.filename} "
-                    f"({result.report.size_mb:.1f} MB) "
-                    f"from [dim]{result.report.downloaded_from}[/dim]"
+
+        async def _fetch_one(bank: BankSpec):
+            async with sem:
+                result = await adapter.fetch(
+                    bank, report_type, year, period, force=force,
                 )
-            else:
-                failed.append(result)
-                console.print(f"    [red]✗[/red] {result.error}")
-            if i < len(banks) - 1:
-                await asyncio.sleep(2)  # inter-bank cooldown
+                return bank, result
+
+        tasks = [_fetch_one(bank) for bank in banks]
+        completed = 0
+        total = len(banks)
+
+        try:
+            for coro in asyncio.as_completed(tasks):
+                bank, result = await coro
+                completed += 1
+                prefix = f"  [{completed}/{total}] {bank.ticker} ({bank.name})"
+                if result.report:
+                    succeeded.append(result)
+                    console.print(
+                        f"{prefix} [green]✓[/green] {result.report.filename} "
+                        f"({result.report.size_mb:.1f} MB) "
+                        f"from [dim]{result.report.downloaded_from}[/dim]"
+                    )
+                else:
+                    failed.append(result)
+                    console.print(f"{prefix} [red]✗[/red] {result.error}")
+        finally:
+            await adapter.close()
+
         return succeeded, failed
 
     with _timed(f"Fetch all {len(banks)} banks"):

@@ -130,7 +130,116 @@ def extract_nav_links(html: str, base_url: str) -> list[str]:
     return links
 
 
-async def crawl_pdf_links(
+async def validate_url(
+    session: aiohttp.ClientSession,
+    url: str,
+    rate_limiter: Optional[Callable[[str], Awaitable[None]]] = None,
+) -> dict[str, bool | str]:
+    """GET-check a URL to verify it returns real HTML (not a JS shell).
+
+    Returns ``{"valid": True}`` or ``{"valid": False, "error": "..."}``.
+    """
+    domain = urlparse(url).netloc
+    if rate_limiter:
+        await rate_limiter(domain)
+
+    try:
+        async with session.get(
+            url, allow_redirects=True, max_redirects=3
+        ) as resp:
+            if resp.status != 200:
+                return {
+                    "valid": False,
+                    "error": f"URL returned HTTP {resp.status}: {url}",
+                }
+
+            html = await resp.text(errors="replace")
+            html_size = len(html)
+
+            soup = BeautifulSoup(html, "lxml")
+            link_count = len(soup.find_all("a", href=True))
+
+            if html_size < 1000 and link_count == 0:
+                return {
+                    "valid": False,
+                    "error": (
+                        f"URL appears to be a JS-rendered shell "
+                        f"({html_size} bytes, {link_count} links): {url}"
+                    ),
+                }
+
+            logger.debug(
+                "URL validated: %s (%d bytes, %d links)",
+                url, html_size, link_count,
+            )
+            return {"valid": True}
+
+    except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+        return {
+            "valid": False,
+            "error": f"URL connection failed: {url} — {exc}",
+        }
+
+
+async def verify_url(
+    url: str,
+    session: Optional[aiohttp.ClientSession] = None,
+) -> Optional[dict]:
+    """HEAD-check a URL to verify it points to a valid PDF.
+
+    Args:
+        url: Candidate URL to check.
+        session: Optional shared session; if None a temporary
+            session is created and closed automatically.
+
+    Returns:
+        Dict with ``status``, ``content_type``, ``content_length``
+        if the URL points to a valid PDF, or ``None`` otherwise.
+    """
+    owns_session = session is None
+    if owns_session:
+        session = aiohttp.ClientSession(
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=aiohttp.ClientTimeout(total=15),
+        )
+    try:
+        async with session.head(
+            url,
+            timeout=aiohttp.ClientTimeout(total=15),
+            allow_redirects=True,
+            max_redirects=5,
+        ) as resp:
+            content_type = resp.headers.get("Content-Type", "")
+            content_length = resp.headers.get("Content-Length")
+            size = int(content_length) if content_length else 0
+
+            if resp.status != 200:
+                logger.debug("HEAD %s → HTTP %d", url, resp.status)
+                return None
+
+            if "pdf" not in content_type.lower() and "octet-stream" not in content_type.lower():
+                if not url.lower().endswith(".pdf"):
+                    logger.debug("HEAD %s → not PDF (%s)", url, content_type)
+                    return None
+
+            if size > 0 and size < 50_000:
+                logger.debug("HEAD %s → too small (%d bytes)", url, size)
+                return None
+
+            return {
+                "status": resp.status,
+                "content_type": content_type,
+                "content_length": size,
+            }
+    except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+        logger.debug("HEAD %s → error: %s", url, exc)
+        return None
+    finally:
+        if owns_session:
+            await session.close()
+
+
+async def crawl_pdf_link(
     base_url: str,
     report_type: str,
     year_str: str,
@@ -139,11 +248,22 @@ async def crawl_pdf_links(
     max_pages: Optional[int] = None,
     page_getter: Callable[[str], Awaitable[Optional[str]]],
     rate_limiter: Optional[Callable[[str], Awaitable[None]]] = None,
-) -> list[tuple[str, str]]:
-    """BFS-crawl pages for PDF links.
+    score_func: Optional[Callable[..., int]] = None,
+    score_threshold: int = 0,
+    validator: Optional[Callable[[str], Awaitable[Optional[dict]]]] = None,
+    period: str = "FY",
+) -> Optional[tuple[str, str]]:
+    """BFS-crawl pages for the first valid PDF link with scoring and optional validation.
 
     Fetches pages via *page_getter*, extracts PDF and navigation links,
     and follows nav links breadth-first up to *max_depth*.
+
+    When *score_func* is provided each PDF link is scored; only links whose
+    score meets *score_threshold* are considered.  When *validator* is also
+    provided, high-scoring links are HEAD-verified before being returned.
+
+    Returns the **first** ``(url, anchor_text)`` tuple that passes all checks,
+    or ``None`` when no qualifying link is found after the full BFS crawl.
 
     Args:
         base_url: Starting URL for the crawl.
@@ -153,14 +273,20 @@ async def crawl_pdf_links(
         max_pages: Maximum pages to fetch across all levels.  ``None`` = unlimited.
         page_getter: Async callable ``(url) -> html`` or ``None`` on failure.
         rate_limiter: Optional async callable ``(domain) -> None`` for throttling.
+        score_func: Optional scoring callable ``(url, year_str, report_type,
+            link_text, period) -> int``.
+        score_threshold: Minimum score to keep a link (0 = keep all when
+            *score_func* is set).
+        validator: Optional async HEAD-validator ``(url) -> Optional[dict]``.
+            When provided, only links that HEAD-verify as valid PDFs are returned.
+        period: Period string passed to *score_func* (e.g. ``"FY"``, ``"Q1"``).
 
     Returns:
-        List of ``(url, anchor_text)`` tuples.
+        The first ``(url, anchor_text)`` tuple that passes all checks,
+        or ``None`` when no qualifying link is found.
     """
     domain = urlparse(base_url).netloc
     visited: set[str] = set()
-    all_pdf_links: list[tuple[str, str]] = []
-    seen_urls: set[str] = set()
     pages_fetched = 0
 
     queue: deque[tuple[str, int]] = deque([(base_url, 0)])
@@ -184,17 +310,36 @@ async def crawl_pdf_links(
         pages_fetched += 1
 
         pdf_links = extract_pdf_links(html, url, report_type, year_str)
-        new_pdf = 0
-        for link, text in pdf_links:
-            if link not in seen_urls:
-                seen_urls.add(link)
-                all_pdf_links.append((link, text))
-                new_pdf += 1
         if pdf_links:
             logger.debug(
-                "  [depth %d] %s → %d PDF links found (%d new)",
-                depth, url, len(pdf_links), new_pdf,
+                "  [depth %d] %s → %d PDF links found",
+                depth, url, len(pdf_links),
             )
+
+        for link, text in pdf_links:
+            if score_func:
+                score = score_func(
+                    link, year_str, report_type,
+                    link_text=text, period=period,
+                )
+                if score < score_threshold:
+                    logger.debug(
+                        "Skip low-score PDF (score=%d < %d): %s",
+                        score, score_threshold, link,
+                    )
+                    continue
+
+            if validator:
+                result = await validator(link)
+                if result is None:
+                    logger.debug("Skip invalid PDF (HEAD failed): %s", link)
+                    continue
+
+            logger.info(
+                "Found valid PDF after %d pages: %s",
+                pages_fetched, link,
+            )
+            return (link, text)
 
         nav_count = 0
         if depth < max_depth:
@@ -211,10 +356,10 @@ async def crawl_pdf_links(
                 )
 
     logger.info(
-        "Crawl complete: %d pages fetched, %d PDF links found for %s %s",
-        pages_fetched, len(all_pdf_links), report_type, year_str,
+        "Crawl complete: %d pages fetched, no valid PDF found for %s %s",
+        pages_fetched, report_type, year_str,
     )
-    return all_pdf_links
+    return None
 
 
 # ── Page-getter factories ────────────────────────────────────────────
@@ -223,10 +368,10 @@ async def crawl_pdf_links(
 def make_static_page_getter(
     session: aiohttp.ClientSession,
 ) -> Callable[[str], Awaitable[Optional[str]]]:
-    """Return an aiohttp-based page getter for :func:`crawl_pdf_links`.
+    """Return an aiohttp-based page getter for :func:`crawl_pdf_link`.
 
     The returned coroutine-safe callable catches HTTP/network errors
-    and returns ``None`` so that :func:`crawl_pdf_links` can skip
+    and returns ``None`` so that :func:`crawl_pdf_link` can skip
     failing pages gracefully.
     """
 
@@ -252,7 +397,7 @@ def make_browser_page_getter(
     browser_max_retries: int = 2,
     user_agent: str,
 ) -> Callable[[str], Awaitable[Optional[str]]]:
-    """Return a Playwright-based page getter for :func:`crawl_pdf_links`.
+    """Return a Playwright-based page getter for :func:`crawl_pdf_link`.
 
     Renders pages in a headless Chromium browser.  Uses ``domcontentloaded``
     instead of ``networkidle`` to avoid hanging on JS-heavy sites.
@@ -286,7 +431,7 @@ def make_browser_page_getter(
                         try:
                             await page.goto(
                                 url,
-                                wait_until="domcontentloaded",
+                                wait_until="load",
                                 timeout=timeout_ms,
                             )
                             break
@@ -301,7 +446,8 @@ def make_browser_page_getter(
                                 1 + browser_max_retries, wait,
                             )
                             await asyncio.sleep(wait)
-                    await page.wait_for_timeout(5_000)
+                    # wait a bit further in case page not fully loaded
+                    await asyncio.sleep(5)
                     return await page.content()
                 finally:
                     await browser.close()

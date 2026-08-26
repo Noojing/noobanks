@@ -12,9 +12,10 @@ from noobanks.sources.base import (
     SourceAdapter,
 )
 from noobanks.sources.webutils import (
-    crawl_pdf_links,
+    crawl_pdf_link,
     make_browser_page_getter,
     make_static_page_getter,
+    verify_url,
 )
 from noobanks.sources.scoring import score_candidate
 from noobanks.storage.store import DEFAULT_DATA_DIR
@@ -25,18 +26,16 @@ __all__ = ["IrAdapter"]
 
 
 class IrAdapter(SourceAdapter):
-    """Scrapes bank investor-relations websites to discover and download PDF reports.
+    """Scrapes bank investor-relations websites to discover PDF reports.
 
     Strategy:
-    1. Scrape the IR landing page → extract all PDF links matching report type + year
+    1. Scrape the IR landing page → extract PDF links matching report type + year
     2. Follow navigation links and scrape those too (BFS up to ``max_depth``)
-    3. Only if the static crawl finds nothing, fall back to rendering the IR
-       page in a headless browser (Playwright) to capture JS-rendered content
-    4. HEAD-verify candidates before download
-
-    Both static and browser modes use the unified :func:`crawl_pdf_links`
-    BFS engine; the *mode* is selected by passing a different *page_getter*
-    callable (aiohttp-based vs. Playwright-based).
+    3. Each PDF link is scored; only links meeting ``score_threshold`` are kept
+    4. High-scoring links are HEAD-verified before being returned
+    5. If the static crawl yields nothing, retry with a headless-browser
+       page getter (Playwright) to render JS-heavy sites
+    6. Returns the **first** valid PDF URL found, or ``None`` if none found
     """
 
     def __init__(
@@ -46,105 +45,83 @@ class IrAdapter(SourceAdapter):
         timeout: int = 30,
         user_agent: str = DEFAULT_USER_AGENT,
         rate_limit_delay: float = 3.0,
-        max_concurrent: int = 4,
-        browser_fallback: bool = True,
-        browser_max_pages: Optional[int] = None,
-        browser_max_retries: int = 2,
         score_threshold: int = 9,
+        browser_max_pages: Optional[int] = None,
     ):
         super().__init__(
             data_dir=data_dir,
             timeout=timeout,
             user_agent=user_agent,
             rate_limit_delay=rate_limit_delay,
-            max_concurrent=max_concurrent,
         )
-        self.browser_fallback = browser_fallback
-        self.browser_max_pages = browser_max_pages
-        self.browser_max_retries = browser_max_retries
         self.score_threshold = score_threshold
+        self.browser_max_pages = browser_max_pages
 
-    def _score_candidates(
-        self,
-        candidates: list[tuple[str, str]],
-        year_str: str,
-        report_type: str,
-        period: str = "FY",
-    ) -> list[tuple[str, int]]:
-        """Score ``(url, anchor_text)`` candidates and return ``(url, score)`` sorted descending."""
-        scored = [
-            (url, score_candidate(
-                url, year_str, link_text=text,
-                report_type=report_type, period=period,
-            ))
-            for url, text in candidates
-        ]
-        scored.sort(key=lambda x: x[1], reverse=True)
-        return scored
-
-    async def discover_urls(
+    async def discover_url(
         self, bank: BankSpec, report_type: str, year: int,
         period: str = "FY",
-    ) -> list[str]:
+    ) -> Optional[str]:
         ir_base = bank.sources.investor_relations
-        candidates: dict[str, str] = {}
         year_str = str(year)
 
-        async with self._get_session() as session:
-            validation = await self._validate_ir_url(session, ir_base)
-            if not validation["valid"]:
-                logger.warning(
-                    "IR URL invalid for %s: %s", bank.ticker, validation["error"]
-                )
+        session = self._get_session()
+        static_getter = make_static_page_getter(session)
 
-            static_getter = make_static_page_getter(session)
-            crawl_links = await crawl_pdf_links(
-                ir_base, report_type, year_str,
-                max_depth=2,
-                page_getter=static_getter,
-                rate_limiter=self._rate_limit,
-            )
-            for url, text in crawl_links:
-                if url not in candidates:
-                    candidates[url] = text
+        async def _validator(url: str):
+            return await verify_url(url, session=session)
 
-        scored = self._score_candidates(
-            list(candidates.items()), year_str, report_type, period,
+        crawl_result = await crawl_pdf_link(
+            ir_base, report_type, year_str,
+            max_depth=2,
+            page_getter=static_getter,
+            rate_limiter=self._rate_limit,
+            score_func=score_candidate,
+            score_threshold=self.score_threshold,
+            validator=_validator,
+            period=period,
         )
-        best_score = scored[0][1] if scored else 0
 
-        if self.browser_fallback and (
-            not scored or best_score < self.score_threshold
-        ):
+        if crawl_result is not None:
+            url, _ = crawl_result
             logger.info(
-                "All[%d] crawl candidates scored below threshold %d "
-                "(best=%d) for %s %s %s; trying headless-browser render",
-                len(scored), self.score_threshold, best_score,
-                bank.ticker, report_type, year,
+                "Discovered URL for %s %s %s: %s",
+                bank.ticker, report_type, year, url,
             )
-            browser_getter = make_browser_page_getter(
-                timeout=self.timeout,
-                browser_max_retries=self.browser_max_retries,
-                user_agent=self.user_agent,
-            )
-            browser_links = await crawl_pdf_links(
-                ir_base, report_type, year_str,
-                max_depth=2,
-                max_pages=self.browser_max_pages,
-                page_getter=browser_getter,
-                rate_limiter=self._rate_limit,
-            )
-            for url, text in browser_links:
-                if url not in candidates:
-                    candidates[url] = text
-            scored = self._score_candidates(
-                list(candidates.items()), year_str, report_type, period,
-            )
-
-        all_scored = [url for url, _ in scored]
+            return url
 
         logger.info(
-            "Discovered %d candidate URLs for %s %s %s",
-            len(all_scored), bank.ticker, report_type, year,
+            "Static crawl found no valid PDF for %s %s %s — "
+            "trying browser render",
+            bank.ticker, report_type, year,
         )
-        return all_scored
+
+        browser_getter = make_browser_page_getter(
+            timeout=self.timeout,
+            user_agent=self.user_agent,
+        )
+
+        crawl_result = await crawl_pdf_link(
+            ir_base, report_type, year_str,
+            max_depth=2,
+            max_pages=self.browser_max_pages,
+            page_getter=browser_getter,
+            rate_limiter=self._rate_limit,
+            score_func=score_candidate,
+            score_threshold=self.score_threshold,
+            validator=_validator,
+            period=period,
+        )
+
+        if crawl_result is None:
+            logger.info(
+                "No valid PDF found for %s %s %s",
+                bank.ticker, report_type, year,
+            )
+            return None
+
+        url, _ = crawl_result
+        logger.info(
+            "Discovered URL via browser for %s %s %s: %s",
+            bank.ticker, report_type, year, url,
+        )
+        return url

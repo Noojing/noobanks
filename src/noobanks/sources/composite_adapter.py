@@ -24,11 +24,11 @@ class CompositeAdapter(SourceAdapter):
     """Adapter that chains multiple source adapters, returning the first success.
 
     Accepts an ordered list of :class:`SourceAdapter` instances.  During
-    :meth:`discover_urls` each adapter is tried in sequence — the first one
-    to return non-empty URLs wins.
+    :meth:`discover_url` each adapter is tried in sequence — the first one
+    to return a non-``None`` URL wins.
 
     :meth:`fetch` is inherited from :class:`SourceAdapter` and automatically
-    uses the chained :meth:`discover_urls`.
+    uses the chained :meth:`discover_url`.
 
     If *adapters* is not supplied a sensible default chain is built:
 
@@ -52,7 +52,6 @@ class CompositeAdapter(SourceAdapter):
         timeout: int = 30,
         user_agent: str = DEFAULT_USER_AGENT,
         rate_limit_delay: float = 3.0,
-        max_concurrent: int = 4,
         **kwargs,
     ):
         super().__init__(
@@ -60,29 +59,21 @@ class CompositeAdapter(SourceAdapter):
             timeout=timeout,
             user_agent=user_agent,
             rate_limit_delay=rate_limit_delay,
-            max_concurrent=max_concurrent,
         )
 
         if adapters is None:
-            ir_kwargs = {
-                k: v for k, v in kwargs.items()
-                if k in ("browser_fallback", "browser_max_pages")
-            }
             adapters = [
                 IrAdapter(
                     data_dir=data_dir,
                     timeout=timeout,
                     user_agent=user_agent,
                     rate_limit_delay=rate_limit_delay,
-                    max_concurrent=max_concurrent,
-                    **ir_kwargs,
                 ),
                 kwargs.pop("fallback_adapter", None) or DdgsAdapter(
                     data_dir=data_dir,
                     timeout=timeout,
                     user_agent=user_agent,
                     rate_limit_delay=rate_limit_delay,
-                    max_concurrent=max_concurrent,
                 ),
             ]
 
@@ -91,21 +82,28 @@ class CompositeAdapter(SourceAdapter):
 
         self.adapters: list[SourceAdapter] = list(adapters)
 
-    async def discover_urls(
+    async def discover_url(
         self, bank: BankSpec, report_type: str, year: int,
         period: str = "FY",
-    ) -> list[str]:
+    ) -> Optional[str]:
+        """Try each adapter in order, returning the first valid URL.
+
+        Adapters are tried sequentially so that higher-trust sources
+        (e.g. :class:`IrAdapter`) always win over lower-trust fallbacks
+        (e.g. :class:`DdgsAdapter`).
+        """
         for adapter in self.adapters:
-            urls = await adapter.discover_urls(bank, report_type, year, period)
-            if urls:
+            url = await adapter.discover_url(bank, report_type, year, period)
+            if url is not None:
                 logger.info(
-                    "Adapter %s found %d URLs for %s %s %d",
-                    type(adapter).__name__, len(urls),
+                    "Adapter %s found URL for %s %s %d",
+                    type(adapter).__name__,
                     bank.ticker, report_type, year,
                 )
-                return urls
+                return url
+
         logger.warning(
-            "No URLs found by any adapter for %s %s %d",
+            "No URL found by any adapter for %s %s %d",
             bank.ticker, report_type, year,
         )
-        return []
+        return None

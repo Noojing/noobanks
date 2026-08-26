@@ -19,19 +19,21 @@ REPORT_PATTERNS: dict[str, list[str]] = {
     "interim_report": [
         "interim.report", "interim_report", "interim-report",
         "interim report", "interim",
-        "half-year", "half_year", "h1", "h2", "halfyear",
+        "half-year", "half_year", "h1", "h2", "1h", "2h", "halfyear",
         "中期报告", "半年报", "半年度报告",
     ],
     "quarterly_report": [
         "quarterly.report", "quarterly_report", "quarterly-report",
         "quarterly report", "quarterly",
         "q1", "q2", "q3", "q4",
+        "1q", "2q", "3q", "4q",
         "first quarter", "1st quarter", "1st-quarter",
         "second quarter", "2nd quarter", "2nd-quarter",
         "third quarter", "3rd quarter", "3rd-quarter",
         "fourth quarter", "4th quarter", "4th-quarter",
         "quarter 1", "quarter 2", "quarter 3", "quarter 4",
         "q1-report", "q2-report", "q3-report", "q4-report",
+        "1q-report", "2q-report", "3q-report", "4q-report",
         "季度报告", "季报", "一季度", "二季度", "三季度", "四季度",
         "第1季度", "第2季度", "第3季度", "第4季度",
     ],
@@ -65,6 +67,7 @@ REPORT_TYPE_SCORE_KEYWORDS: dict[str, list[str]] = {
         "interim report", "interim-report", "interim_report", "interimreport",
         "interim results", "interim-results", "interim_results", "interimresults",
         "half-year", "half_year", "half year", "half-year results",
+        "h1", "h2", "1h", "2h",
         "中期报告", "半年报", "半年度报告",
     ],
     "quarterly_report": [
@@ -75,6 +78,8 @@ REPORT_TYPE_SCORE_KEYWORDS: dict[str, list[str]] = {
         "fourth quarter", "4th quarter", "4th-quarter",
         "quarter 1", "quarter 2", "quarter 3", "quarter 4",
         "q1-report", "q2-report", "q3-report", "q4-report",
+        "1q", "2q", "3q", "4q",
+        "1q-report", "2q-report", "3q-report", "4q-report",
         "季度报告", "季报",
     ],
     "10-K": ["10-k", "10k"],
@@ -87,12 +92,12 @@ REPORT_TYPE_SCORE_KEYWORDS: dict[str, list[str]] = {
 # Period keywords for candidate scoring.
 PERIOD_SCORE_KEYWORDS: dict[str, list[str]] = {
     "FY": ["fy", "full year", "full-year", "annual", "yearly", "年报", "年度报告"],
-    "Q1": ["q1", "quarter 1", "1st quarter", "first quarter", "一季度", "第1季度"],
-    "Q2": ["q2", "quarter 2", "2nd quarter", "second quarter", "二季度", "第2季度"],
-    "Q3": ["q3", "quarter 3", "3rd quarter", "third quarter", "三季度", "第3季度"],
-    "Q4": ["q4", "quarter 4", "4th quarter", "fourth quarter", "四季度", "第4季度"],
-    "H1": ["h1", "half-year 1", "first half", "上半年", "半年报", "中期报告"],
-    "H2": ["h2", "half-year 2", "second half", "下半年"],
+    "Q1": ["q1", "1q", "quarter 1", "1st quarter", "first quarter", "一季度", "第1季度"],
+    "Q2": ["q2", "2q", "quarter 2", "2nd quarter", "second quarter", "二季度", "第2季度"],
+    "Q3": ["q3", "3q", "quarter 3", "3rd quarter", "third quarter", "三季度", "第3季度"],
+    "Q4": ["q4", "4q", "quarter 4", "4th quarter", "fourth quarter", "四季度", "第4季度"],
+    "H1": ["h1", "1h", "half-year 1", "first half", "上半年", "半年报", "中期报告"],
+    "H2": ["h2", "2h", "half-year 2", "second half", "下半年"],
 }
 
 # Filenames that signal a non-report document. Penalized in text-aware scoring.
@@ -111,6 +116,8 @@ NAV_KEYWORDS: list[str] = [
     "first quarter", "second quarter", "third quarter", "fourth quarter",
     "1st quarter", "2nd quarter", "3rd quarter", "4th quarter",
     "q1-report", "q2-report", "q3-report", "q4-report",
+    "1q", "2q", "3q", "4q",
+    "1q-report", "2q-report", "3q-report", "4q-report",
     "financial-report", "financial_reports", "financial report",
     "financial-results", "financial_results", "financial results",
     "performance-report", "performance_reports", "performance report",
