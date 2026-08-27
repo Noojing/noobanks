@@ -98,6 +98,8 @@ CI runs on Python 3.14 via GitHub Actions (`.github/workflows/ci.yml`).
 
 ## TODO
 - parallelise search of multiple reports if needed for the same bank
+- validate doc by reading first few pages
+- disable ddgs by default
 
 ### Metrics:
 - Allowance Coverage Ratio: Loan Loss Reserves / Non-Performing Loans × 100%)

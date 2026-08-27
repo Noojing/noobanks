@@ -26,6 +26,8 @@ from noobanks.processing.parser import (
     parse_to_markdown,
 )
 from noobanks.sources import CompositeAdapter
+from noobanks.sources.ddgs_adapter import DdgsAdapter
+from noobanks.sources.ir_adapter import IrAdapter
 from noobanks.storage import ReportStore
 from noobanks.storage.store import DEFAULT_DATA_DIR
 
@@ -43,7 +45,9 @@ _LEVELS = [logging.WARNING, logging.INFO, logging.DEBUG]
 @app.callback()
 def _global(
     verbose: int = typer.Option(
-        0, "--verbose", "-v",
+        0,
+        "--verbose",
+        "-v",
         count=True,
         help="Increase log verbosity: -v for INFO, -vv for DEBUG",
         show_default=False,
@@ -67,6 +71,7 @@ app.add_typer(list_app, name="list")
 
 # ── helper ────────────────────────────────────────────────────────────────
 
+
 @contextmanager
 def _timed(description: str):
     """Context manager that logs elapsed wall-clock time on exit."""
@@ -83,6 +88,7 @@ def _period_label(report_type: str, period: str) -> str:
     if period == "FY":
         return f"{report_type} (Full Year)"
     return f"{report_type} ({period})"
+
 
 def _run_async(coro):
     """Run an async coroutine from a sync typer callback."""
@@ -109,25 +115,41 @@ def _resolve_filings(
 
 # ── fetch ──────────────────────────────────────────────────────────────────
 
+
 @fetch_app.command(name="bank")
 def fetch_bank(
     ticker: str = typer.Argument(..., help="Bank ticker (e.g. BARC.L, JPM, 601398.SH)"),
     report_type: Optional[str] = typer.Option(
-        None, "--type", "-t",
+        None,
+        "--type",
+        "-t",
         help="Report type (e.g. annual_report, 10-K, 10-Q). If omitted, fetches all types.",
     ),
     year: Optional[int] = typer.Option(
-        None, "--year", "-y",
+        None,
+        "--year",
+        "-y",
         help="Fiscal year. If omitted, defaults to last year.",
     ),
     period: Optional[str] = typer.Option(
-        None, "--period", "-p",
+        None,
+        "--period",
+        "-p",
         help="Period within type (e.g. FY, Q1-Q4, H1). If omitted, fetches all applicable periods.",
     ),
-    force: bool = typer.Option(False, "--force", "-f", help="Re-download even if exists"),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Re-download even if exists"
+    ),
     data_dir: Path = typer.Option(
-        DEFAULT_DATA_DIR, "--data-dir", "-d",
+        DEFAULT_DATA_DIR,
+        "--data-dir",
+        "-d",
         help="Base data directory (default: ~/.noobanks/data)",
+    ),
+    ddgs_fallback: bool = typer.Option(
+        False,
+        "--ddgs-fallback",
+        help="Use DuckDuckGo web search as a fallback when IR adapter fails",
     ),
 ) -> None:
     """Download financial reports for a specific bank.
@@ -151,20 +173,32 @@ def fetch_bank(
         console.print(f"Use [bold]noobanks list banks[/bold] to see available types.")
         raise typer.Exit(1)
 
-    console.print(f"Fetching [bold]{bank.name}[/bold] ({bank.ticker}) "
-                  f"for {len(specs)} report(s) in {resolved_year}:")
+    console.print(
+        f"Fetching [bold]{bank.name}[/bold] ({bank.ticker}) "
+        f"for {len(specs)} report(s) in {resolved_year}:"
+    )
     for rtype, p in specs:
         console.print(f"  • {_period_label(rtype, p)} {resolved_year}")
 
     ReportStore(data_dir).ensure_dirs()
 
     async def _fetch_all_specs():
+        _adapters = [IrAdapter(data_dir=data_dir)]
+        if ddgs_fallback:
+            _adapters.append(DdgsAdapter(data_dir=data_dir))
         succeeded, failed = [], []
-        async with CompositeAdapter(data_dir=data_dir) as adapter:
+        async with CompositeAdapter(
+            adapters=_adapters,
+            data_dir=data_dir,
+        ) as adapter:
             for rtype, p in specs:
                 with _timed(f"Fetch {bank.ticker} {rtype} {p}"):
                     result = await adapter.fetch(
-                        bank, rtype, resolved_year, p, force=force,
+                        bank,
+                        rtype,
+                        resolved_year,
+                        p,
+                        force=force,
                     )
                 if result.report:
                     succeeded.append(result)
@@ -191,15 +225,21 @@ def fetch_bank(
 @fetch_app.command(name="all")
 def fetch_all(
     report_type: Optional[str] = typer.Option(
-        None, "--type", "-t",
+        None,
+        "--type",
+        "-t",
         help="Report type to download. If omitted, fetches all types for each bank.",
     ),
     year: Optional[int] = typer.Option(
-        None, "--year", "-y",
+        None,
+        "--year",
+        "-y",
         help="Fiscal year. If omitted, defaults to last year.",
     ),
     period: Optional[str] = typer.Option(
-        None, "--period", "-p",
+        None,
+        "--period",
+        "-p",
         help="Period within type. If omitted, fetches all applicable periods.",
     ),
     market: Optional[str] = typer.Option(
@@ -207,12 +247,21 @@ def fetch_all(
     ),
     force: bool = typer.Option(False, "--force", "-f", help="Re-download existing"),
     data_dir: Path = typer.Option(
-        DEFAULT_DATA_DIR, "--data-dir", "-d",
+        DEFAULT_DATA_DIR,
+        "--data-dir",
+        "-d",
         help="Base data directory (default: ~/.noobanks/data)",
     ),
     max_concurrent: int = typer.Option(
-        5, "--concurrency", "-c",
+        5,
+        "--concurrency",
+        "-c",
         help="Max concurrent bank fetches",
+    ),
+    ddgs_fallback: bool = typer.Option(
+        False,
+        "--ddgs-fallback",
+        help="Use DuckDuckGo web search as a fallback when IR adapter fails",
     ),
 ) -> None:
     """Download reports for all configured banks.
@@ -234,7 +283,13 @@ def fetch_all(
     ReportStore(data_dir).ensure_dirs()
 
     async def _fetch_all():
-        async with CompositeAdapter(data_dir=data_dir) as adapter:
+        _adapters = [IrAdapter(data_dir=data_dir)]
+        if ddgs_fallback:
+            _adapters.append(DdgsAdapter(data_dir=data_dir))
+        async with CompositeAdapter(
+            adapters=_adapters,
+            data_dir=data_dir,
+        ) as adapter:
             sem = asyncio.Semaphore(max_concurrent)
             succeeded, failed = [], []
 

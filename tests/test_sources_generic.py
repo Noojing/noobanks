@@ -454,11 +454,11 @@ class TestDdgsDiscoverUrl:
         )
         mocker.patch(
             "noobanks.sources.ddgs_adapter.validate_doc_url",
-            return_value={"status": 200, "content_type": "application/pdf", "content_length": 500000},
+            return_value=(200, "application/pdf"),
         )
         mocker.patch(
             "noobanks.sources.ddgs_adapter.score_candidate",
-            return_value=10,
+            return_value=13,
         )
 
         url = await adapter.discover_url(bank, "annual_report", 2025)
@@ -482,14 +482,19 @@ class TestDdgsDiscoverUrl:
         adapter = DdgsAdapter()
 
         mocker.patch.object(
-            adapter, "_run_search",
+            adapter,
+            "_run_search",
             return_value=[
-                {"title": "Quarterly Results", "href": "https://cdn.example.com/q3-results.pdf", "body": "..."},
+                {
+                    "title": "Quarterly Results",
+                    "href": "https://cdn.example.com/q3-results.pdf",
+                    "body": "...",
+                },
             ],
         )
         mocker.patch(
             "noobanks.sources.ddgs_adapter.validate_doc_url",
-            return_value={"status": 200, "content_type": "application/pdf", "content_length": 500000},
+            return_value="application/pdf",
         )
         mocker.patch(
             "noobanks.sources.ddgs_adapter.score_candidate",
@@ -521,7 +526,9 @@ class TestDdgsDiscoverUrl:
         assert url is None
 
     @pytest.mark.asyncio
-    async def test_composite_discover_url_calls_fallback_when_primary_returns_none(self, mocker):
+    async def test_composite_discover_url_calls_fallback_when_primary_returns_none(
+        self, mocker
+    ):
         """When the first adapter returns None, CompositeAdapter tries the next."""
         from noobanks.config.models import BankSpec, SourceConfig
 
@@ -530,14 +537,17 @@ class TestDdgsDiscoverUrl:
             ticker="601398.SH",
             exchange="SSE",
             market="CN",
-            sources=SourceConfig(investor_relations="https://www.icbc-ltd.com/en/page/1220.html"),
+            sources=SourceConfig(
+                investor_relations="https://www.icbc-ltd.com/en/page/1220.html"
+            ),
             filings={"annual_report": ["FY"]},
         )
         adapter = CompositeAdapter()
 
         mocker.patch.object(adapter.adapters[0], "discover_url", return_value=None)
         mocker.patch.object(
-            adapter.adapters[1], "discover_url",
+            adapter.adapters[1],
+            "discover_url",
             return_value="https://cdn.example.com/report-2025.pdf",
         )
 
@@ -546,7 +556,9 @@ class TestDdgsDiscoverUrl:
         assert "report-2025.pdf" in url
 
     @pytest.mark.asyncio
-    async def test_composite_discover_url_skips_fallback_when_primary_succeeds(self, mocker):
+    async def test_composite_discover_url_skips_fallback_when_primary_succeeds(
+        self, mocker
+    ):
         """When the first adapter finds a URL, later adapters are never called."""
         from noobanks.config.models import BankSpec, SourceConfig
 
@@ -555,16 +567,21 @@ class TestDdgsDiscoverUrl:
             ticker="BARC.L",
             exchange="LSE",
             market="UK",
-            sources=SourceConfig(investor_relations="https://home.barclays/investor-relations"),
+            sources=SourceConfig(
+                investor_relations="https://home.barclays/investor-relations"
+            ),
             filings={"annual_report": ["FY"]},
         )
         adapter = CompositeAdapter()
 
         mocker.patch.object(
-            adapter.adapters[0], "discover_url",
+            adapter.adapters[0],
+            "discover_url",
             return_value="https://home.barclays/reports/2025-annual-report.pdf",
         )
-        fallback_spy = mocker.patch.object(adapter.adapters[1], "discover_url", return_value=None)
+        fallback_spy = mocker.patch.object(
+            adapter.adapters[1], "discover_url", return_value=None
+        )
 
         url = await adapter.discover_url(bank, "annual_report", 2025)
         assert url is not None
@@ -616,14 +633,19 @@ class TestIrAdapterDiscoverUrl:
         from noobanks.sources.ir_adapter import IrAdapter
 
         adapter = IrAdapter()
-        crawled = ("https://home.barclays/reports/2025-annual-report.pdf", "Annual Report 2025")
+        crawled = (
+            "https://home.barclays/reports/2025-annual-report.pdf",
+            "Annual Report 2025",
+        )
         crawl_mock = mocker.patch(
             "noobanks.sources.ir_adapter.crawl_pdf_link",
             return_value=crawled,
         )
 
         url = await adapter.discover_url(
-            self._bank("https://home.barclays/investor-relations"), "annual_report", 2025
+            self._bank("https://home.barclays/investor-relations"),
+            "annual_report",
+            2025,
         )
         assert url == crawled[0]
         assert crawl_mock.call_count == 1
@@ -634,14 +656,19 @@ class TestIrAdapterDiscoverUrl:
         from noobanks.sources.ir_adapter import IrAdapter
 
         adapter = IrAdapter()
-        crawled = ("https://www.icbc.com.cn/en/2024-annual-report.pdf", "2024 Annual Report")
+        crawled = (
+            "https://www.icbc.com.cn/en/2024-annual-report.pdf",
+            "2024 Annual Report",
+        )
         crawl_mock = mocker.patch(
             "noobanks.sources.ir_adapter.crawl_pdf_link",
             return_value=crawled,
         )
 
         url = await adapter.discover_url(
-            self._bank("https://www.icbc.com.cn/en/page/1220.html"), "annual_report", 2024
+            self._bank("https://www.icbc.com.cn/en/page/1220.html"),
+            "annual_report",
+            2024,
         )
         assert url == crawled[0]
         assert crawl_mock.call_count == 1
@@ -681,93 +708,121 @@ class TestUrlScoreTextAware:
 
     def test_text_aware_scoring_without_link_text(self):
         """Without link_text, URL-level signals still rank correctly."""
-        score = score_candidate("https://example.com/annual-report-2025.pdf", "2025", report_type="annual_report")
+        score = score_candidate(
+            "https://example.com/annual-report-2025.pdf",
+            "2025",
+            report_type="annual_report",
+        )
         assert score == 8
 
     def test_year_in_link_text_beats_year_in_url(self):
         text_only = score_candidate(
-            "https://example.com/report.pdf", "2025",
-            link_text="2025 Annual Report", report_type="annual_report",
+            "https://example.com/report.pdf",
+            "2025",
+            link_text="2025 Annual Report",
+            report_type="annual_report",
         )
         url_only = score_candidate(
-            "https://example.com/2025/report.pdf", "2025",
-            link_text="Download", report_type="annual_report",
+            "https://example.com/2025/report.pdf",
+            "2025",
+            link_text="Download",
+            report_type="annual_report",
         )
         assert text_only > url_only
 
     def test_type_keyword_in_text_beats_type_keyword_in_url(self):
         text_only = score_candidate(
-            "https://example.com/2025/x.pdf", "2025",
-            link_text="2025 Annual Report", report_type="annual_report",
+            "https://example.com/2025/x.pdf",
+            "2025",
+            link_text="2025 Annual Report",
+            report_type="annual_report",
         )
         url_only = score_candidate(
-            "https://example.com/annual-report-2025.pdf", "2025",
-            link_text="download", report_type="annual_report",
+            "https://example.com/annual-report-2025.pdf",
+            "2025",
+            link_text="download",
+            report_type="annual_report",
         )
         assert text_only > url_only
 
     def test_interim_penalized_for_annual_report(self):
         interim = score_candidate(
-            "https://example.com/2024InterimReport.pdf", "2024",
-            link_text="2024 Interim Report", report_type="annual_report",
+            "https://example.com/2024InterimReport.pdf",
+            "2024",
+            link_text="2024 Interim Report",
+            report_type="annual_report",
         )
         annual = score_candidate(
-            "https://example.com/2024AnnualReport.pdf", "2024",
-            link_text="2024 Annual Report", report_type="annual_report",
+            "https://example.com/2024AnnualReport.pdf",
+            "2024",
+            link_text="2024 Annual Report",
+            report_type="annual_report",
         )
         assert annual > interim
 
     def test_interim_results_penalized_for_annual_report(self):
         """Opaque 'InterimResults' filenames are also penalized."""
         interim = score_candidate(
-            "https://example.com/2024InterimResultsEn20240914.pdf", "2024",
-            link_text="", report_type="annual_report",
+            "https://example.com/2024InterimResultsEn20240914.pdf",
+            "2024",
+            link_text="",
+            report_type="annual_report",
         )
         annual = score_candidate(
-            "https://example.com/2024/2024AnnualReport.pdf", "2024",
-            link_text="", report_type="annual_report",
+            "https://example.com/2024/2024AnnualReport.pdf",
+            "2024",
+            link_text="",
+            report_type="annual_report",
         )
         assert annual > interim
 
     def test_announcement_ranks_below_annual_report(self):
         """Non-report documents (announcements) rank below real reports."""
         announcement = score_candidate(
-            "https://example.com/2024/Announcement20241030.pdf", "2024",
-            link_text="", report_type="annual_report",
+            "https://example.com/2024/Announcement20241030.pdf",
+            "2024",
+            link_text="",
+            report_type="annual_report",
         )
         annual = score_candidate(
-            "https://example.com/2024/2024AnnualReport.pdf", "2024",
-            link_text="", report_type="annual_report",
+            "https://example.com/2024/2024AnnualReport.pdf",
+            "2024",
+            link_text="",
+            report_type="annual_report",
         )
         assert annual > announcement
 
     def test_briefing_and_qa_record_penalized(self):
         """Opaque non-report names (briefings, Q&A records) are penalized."""
         annual = score_candidate(
-            "https://example.com/2024/2024AnnualReport.pdf", "2024",
-            link_text="", report_type="annual_report",
+            "https://example.com/2024/2024AnnualReport.pdf",
+            "2024",
+            link_text="",
+            report_type="annual_report",
         )
         for name in ("ResultsBriefing20240422.pdf", "QARecord20240914.pdf"):
             score = score_candidate(
-                f"https://example.com/2024/{name}", "2024",
-                link_text="", report_type="annual_report",
+                f"https://example.com/2024/{name}",
+                "2024",
+                link_text="",
+                report_type="annual_report",
             )
             assert annual > score, name
 
     def test_anchor_text_outvotes_url_penalty(self):
         """Positive anchor text outweighs a URL-level non-report penalty."""
         score = score_candidate(
-            "https://example.com/2024/annualresults.pdf", "2024",
-            link_text="2024 Annual Report", report_type="annual_report",
+            "https://example.com/2024/annualresults.pdf",
+            "2024",
+            link_text="2024 Annual Report",
+            report_type="annual_report",
         )
         assert score > 5  # +4 year-text, +4 annual-text, −2 url penalty, +1 non-cdn
 
     def test_extract_pdf_links_with_text_returns_pairs(self):
         """Always returns (url, anchor_text) tuples."""
         html = _pdf_links_html("https://example.com", "annual-report-2025.pdf")
-        pairs = extract_pdf_links(
-            html, "https://example.com", "annual_report", "2025"
-        )
+        pairs = extract_pdf_links(html, "https://example.com", "annual_report", "2025")
         assert pairs == [
             ("https://example.com/annual-report-2025.pdf", "annual-report-2025.pdf")
         ]
@@ -785,9 +840,9 @@ class TestCompositeAdapterInit:
         assert adapter.timeout == 30
         assert adapter.rate_limit_delay == 3.0
         assert len(adapter.adapters) == 2
-        assert adapter.adapters[0].score_threshold == 9
+        assert adapter.adapters[0].score_threshold == 12
         assert adapter.adapters[0].browser_max_pages is None
-        assert adapter.adapters[1].score_threshold == 9
+        assert adapter.adapters[1].score_threshold == 12
 
     def test_custom_values(self, tmp_path: Path):
         adapter = CompositeAdapter(

@@ -46,7 +46,7 @@ class IrAdapter(SourceAdapter):
         timeout: int = 30,
         user_agent: str = DEFAULT_USER_AGENT,
         rate_limit_delay: float = 3.0,
-        score_threshold: int = 9,
+        score_threshold: int = 12,
         browser_max_pages: Optional[int] = None,
     ):
         super().__init__(
@@ -72,7 +72,7 @@ class IrAdapter(SourceAdapter):
             user_agent=self.user_agent,
         )
 
-        async def _validator(url: str):
+        async def _validator(url: str) -> Optional[str]:
             return await validate_doc_url(url, session=session)
 
         crawl_result = await crawl_pdf_link(

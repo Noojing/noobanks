@@ -48,12 +48,14 @@ def score_candidate(
     report_type: str,
     link_text: Optional[str] = None,
     period: Optional[str] = None,
+    aliases: Optional[list[str]] = None,
 ) -> int:
     """Score a candidate URL for relevance (higher = better match).
 
     Text-aware scoring: anchor text is weighted above the URL, report-type
     and period keywords are used for fine-grained ranking, and non-report
-    documents (announcements, briefings, ...) are penalized.
+    documents (announcements, briefings, ...) are penalized.  When *aliases*
+    are provided, matches in URL or link text further boost the score.
     """
     url_lower = url.lower()
     text_lower = (link_text or "").lower()
@@ -76,6 +78,14 @@ def score_candidate(
             url_lower, text_lower, PERIOD_SCORE_KEYWORDS, period,
             text_match_weight=4, url_match_weight=3,
             text_other_penalty=3, url_other_penalty=2,
+        )
+
+    if aliases:
+        alias_keywords = {"__alias__": list(aliases)}
+        score += _keyword_match_score(
+            url_lower, text_lower, alias_keywords, "__alias__",
+            text_match_weight=4, url_match_weight=3,
+            text_other_penalty=0, url_other_penalty=0,
         )
 
     if any(kw in text_lower for kw in NON_REPORT_SCORE_KEYWORDS):

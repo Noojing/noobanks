@@ -137,17 +137,17 @@ def _validate_html_content(html: str, url: str) -> dict[str, bool | str]:
     link_count = len(soup.find_all("a", href=True))
 
     if html_size < 1000 and link_count == 0:
-        return {
-            "valid": False,
-            "error": (
-                f"URL appears to be a JS-rendered shell "
-                f"({html_size} bytes, {link_count} links): {url}"
-            ),
-        }
+        error = (
+            f"[{html_size} bytes, {link_count} links)] "
+            f"URL appears to be a JS-rendered shell. {url}"
+        )
+        return {"valid": False, "error": error}
 
     logger.debug(
-        "HTML validated: %s (%d bytes, %d links)",
-        url, html_size, link_count,
+        "HTML validation [passed]: [%d bytes, %d links] %s",
+        html_size,
+        link_count,
+        url,
     )
     return {"valid": True}
 
@@ -155,8 +155,11 @@ def _validate_html_content(html: str, url: str) -> dict[str, bool | str]:
 async def validate_doc_url(
     url: str,
     session: Optional[aiohttp.ClientSession] = None,
-) -> Optional[dict]:
-    """HEAD-check a URL to verify it points to a valid PDF.
+) -> Optional[str]:
+    """HEAD-check a URL to retrieve its content type.
+
+    Makes a HEAD request and returns the ``Content-Type`` header on success,
+    or ``None`` if the request fails or the server returns a non-200 status.
 
     Args:
         url: Candidate URL to check.
@@ -164,9 +167,9 @@ async def validate_doc_url(
             session is created and closed automatically.
 
     Returns:
-        Dict with ``status``, ``content_type``, ``content_length``
-        if the URL points to a valid PDF, or ``None`` otherwise.
+        The content-type string, or ``None`` on failure.
     """
+
     owns_session = session is None
     if owns_session:
         session = aiohttp.ClientSession(
@@ -181,27 +184,12 @@ async def validate_doc_url(
             max_redirects=5,
         ) as resp:
             content_type = resp.headers.get("Content-Type", "")
-            content_length = resp.headers.get("Content-Length")
-            size = int(content_length) if content_length else 0
 
             if resp.status != 200:
                 logger.debug("HEAD %s → HTTP %d", url, resp.status)
                 return None
 
-            if "pdf" not in content_type.lower() and "octet-stream" not in content_type.lower():
-                if not url.lower().endswith(".pdf"):
-                    logger.debug("HEAD %s → not PDF (%s)", url, content_type)
-                    return None
-
-            if size > 0 and size < 50_000:
-                logger.debug("HEAD %s → too small (%d bytes)", url, size)
-                return None
-
-            return {
-                "status": resp.status,
-                "content_type": content_type,
-                "content_length": size,
-            }
+            return content_type
     except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
         logger.debug("HEAD %s → error: %s", url, exc)
         return None
@@ -253,14 +241,15 @@ async def crawl_pdf_link(
             link_text, period) -> int``.
         score_threshold: Minimum score to keep a link (0 = keep all when
             *score_func* is set).
-        validator: Optional async HEAD-validator ``(url) -> Optional[dict]``.
-            When provided, only links that HEAD-verify as valid PDFs are returned.
+        validator: Optional async HEAD-validator ``(url) -> Optional[str]``.
+            When provided, only links that HEAD-verify successfully are returned.
         period: Period string passed to *score_func* (e.g. ``"FY"``, ``"Q1"``).
 
     Returns:
         The first ``(url, anchor_text)`` tuple that passes all checks,
         or ``None`` when no qualifying link is found.
     """
+
     domain = urlparse(base_url).netloc
     visited: set[str] = set()
     pages_fetched = 0
@@ -269,6 +258,7 @@ async def crawl_pdf_link(
 
     while queue:
         url, depth = queue.popleft()
+        logger.debug("crawling: depth [%s], url [%s]", depth, url)
 
         if url in visited:
             continue
@@ -282,16 +272,18 @@ async def crawl_pdf_link(
 
         html = None
         for getter in page_getters:
+            logger.debug("\ttrying via %s", getter.__name__)
+            type = await validate_doc_url(url)
+            if type is None or "html" not in type:
+                logger.debug("\turl has type [%s]; skipped", type or "N/A")
+                continue
             html = await getter(url)
             if html is None:
                 continue
             validation = _validate_html_content(html, url)
             if validation.get("valid"):
                 break
-            logger.debug(
-                "  [depth %d] %s → getter returned JS shell, trying next",
-                depth, url,
-            )
+            logger.debug("\turl failed with error: %s", validation.get("error"))
             html = None
 
         if html is None:
@@ -306,40 +298,47 @@ async def crawl_pdf_link(
                 for alias in aliases
             ):
                 logger.debug(
-                    "  [depth %d] %s → no alias match, skipping",
-                    depth, url,
+                    "\t[depth %d] %s → no alias match, skipping",
+                    depth,
+                    url,
                 )
                 continue
 
         pdf_links = extract_pdf_links(html, url, report_type, year_str)
-        if pdf_links:
-            logger.debug(
-                "  [depth %d] %s → %d PDF links found",
-                depth, url, len(pdf_links),
-            )
+        logger.debug(
+            "\t[%d] PDF links found",
+            len(pdf_links),
+        )
 
         for link, text in pdf_links:
             if score_func:
                 score = score_func(
-                    link, year_str, report_type,
-                    link_text=text, period=period,
+                    link,
+                    year_str,
+                    report_type,
+                    link_text=text,
+                    period=period,
+                    aliases=aliases,
                 )
                 if score < score_threshold:
                     logger.debug(
-                        "Skip low-score PDF (score=%d < %d): %s",
-                        score, score_threshold, link,
+                        "\t\tskip low-score PDF (score=%d < %d): %s",
+                        score,
+                        score_threshold,
+                        link,
                     )
                     continue
 
             if validator:
-                result = await validator(link)
-                if result is None:
-                    logger.debug("Skip invalid PDF (HEAD failed): %s", link)
+                type = await validator(link)
+                if type is None or "pdf" not in type:
+                    logger.debug("\t\tskip invalid PDF (HEAD failed): %s", link)
                     continue
 
             logger.info(
-                "Found valid PDF after %d pages: %s",
-                pages_fetched, link,
+                "\t\tfound valid PDF after %d pages: %s",
+                pages_fetched,
+                link,
             )
             return (link, text)
 
@@ -354,12 +353,17 @@ async def crawl_pdf_link(
             if nav_links:
                 logger.debug(
                     "  [depth %d] %s → %d nav links (%d enqueued)",
-                    depth, url, len(nav_links), nav_count,
+                    depth,
+                    url,
+                    len(nav_links),
+                    nav_count,
                 )
 
     logger.info(
-        "Crawl complete: %d pages fetched, no valid PDF found for %s %s",
-        pages_fetched, report_type, year_str,
+        "crawl complete: %d pages fetched, no valid PDF found for %s %s",
+        pages_fetched,
+        report_type,
+        year_str,
     )
     return None
 
@@ -380,7 +384,9 @@ def make_static_page_getter(
     async def fetch_page(url: str) -> Optional[str]:
         try:
             async with session.get(
-                url, allow_redirects=True, max_redirects=3,
+                url,
+                allow_redirects=True,
+                max_redirects=3,
             ) as resp:
                 if resp.status != 200:
                     logger.debug("Skip %s → HTTP %d", url, resp.status)
@@ -393,11 +399,73 @@ def make_static_page_getter(
     return fetch_page
 
 
+_STALTH_SCRIPT = r"""
+Object.defineProperty(navigator, 'webdriver', {
+    get: () => false,
+});
+
+Object.defineProperty(navigator, 'plugins', {
+    get: () => [1, 2, 3, 4, 5],
+});
+
+Object.defineProperty(navigator, 'languages', {
+    get: () => ['en-US', 'en'],
+});
+
+Object.defineProperty(navigator, 'platform', {
+    get: () => 'Win32',
+});
+
+Object.defineProperty(navigator, 'hardwareConcurrency', {
+    get: () => 8,
+});
+
+Object.defineProperty(navigator, 'deviceMemory', {
+    get: () => 8,
+});
+
+window.chrome = {
+    runtime: {},
+    loadTimes: function() {},
+    csi: function() {},
+    app: {},
+};
+
+const originalQuery = window.navigator.permissions.query;
+window.navigator.permissions.query = (parameters) => (
+    parameters.name === 'notifications'
+        ? Promise.resolve({ state: Notification.permission })
+        : originalQuery(parameters)
+);
+
+const toDataURL = HTMLCanvasElement.prototype.toDataURL;
+HTMLCanvasElement.prototype.toDataURL = function(type) {
+    if (type === 'image/png' && this.width === 220 && this.height === 30) {
+        return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+    }
+    return toDataURL.apply(this, arguments);
+};
+
+const originalToString = Function.prototype.toString;
+Function.prototype.toString = function() {
+    if (this.name && this.name.startsWith('get')) {
+        return 'function ' + this.name + '() { [native code] }';
+    }
+    return originalToString.apply(this, arguments);
+};
+
+window.addEventListener('DOMContentLoaded', () => {
+    const originalQuery = window.navigator.permissions.query;
+});
+"""
+
+
 def make_browser_page_getter(
     *,
     timeout: int = 30,
     browser_max_retries: int = 2,
     user_agent: str,
+    stealth: bool = True,
 ) -> Callable[[str], Awaitable[Optional[str]]]:
     """Return a Playwright-based page getter for :func:`crawl_pdf_link`.
 
@@ -406,6 +474,9 @@ def make_browser_page_getter(
     Retries ``page.goto`` on timeout up to *browser_max_retries* times
     with exponential backoff.  Returns ``None`` gracefully when Playwright
     is not installed or rendering fails.
+
+    When *stealth* is ``True`` (the default), anti-bot-detection patches
+    are injected to evade WAFs (e.g. Imperva/Perimeter X).
     """
 
     async def render_page(url: str) -> Optional[str]:
@@ -427,25 +498,30 @@ def make_browser_page_getter(
                 try:
                     context = await browser.new_context(
                         user_agent=user_agent,
+                        viewport={"width": 1920, "height": 1080},
                     )
                     page = await context.new_page()
+                    if stealth:
+                        await page.add_init_script(_STALTH_SCRIPT)
                     for attempt in range(1 + browser_max_retries):
                         try:
                             await page.goto(
                                 url,
-                                wait_until="load",
+                                wait_until="domcontentloaded",
                                 timeout=timeout_ms,
                             )
                             break
                         except TimeoutError:
                             if attempt >= browser_max_retries:
                                 raise
-                            wait = 2 * (2 ** attempt)
+                            wait = 2 * (2**attempt)
                             logger.warning(
                                 "page.goto timeout for %s "
                                 "(attempt %d/%d); retrying in %ds",
-                                url, attempt + 1,
-                                1 + browser_max_retries, wait,
+                                url,
+                                attempt + 1,
+                                1 + browser_max_retries,
+                                wait,
                             )
                             await asyncio.sleep(wait)
                     # wait a bit further in case page not fully loaded

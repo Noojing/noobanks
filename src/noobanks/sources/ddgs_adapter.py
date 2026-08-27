@@ -49,7 +49,7 @@ class DdgsAdapter(SourceAdapter):
         user_agent: str = DEFAULT_USER_AGENT,
         rate_limit_delay: float = 3.0,
         max_results: int = DEFAULT_DDGS_MAX_RESULTS,
-        score_threshold: int = 9,
+        score_threshold: int = 12,
     ):
         super().__init__(
             data_dir=data_dir,
@@ -105,6 +105,7 @@ class DdgsAdapter(SourceAdapter):
                     s = score_candidate(
                         href, year_str, report_type,
                         link_text=link_text, period=period,
+                        aliases=bank.aliases,
                     )
                     if s >= self.score_threshold:
                         logger.info(

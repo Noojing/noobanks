@@ -18,9 +18,8 @@ banks:
     sources:
       investor_relations: https://www.jpmorganchase.com/ir
     filings:
-      10-K: [FY]
-      10-Q: [Q1, Q2, Q3, Q4]
-      8-K: [FY]
+      10-K: [Q4]
+      10-Q: [Q1, Q2, Q3]
     aliases: [JPMorgan, Chase]
 
   - name: Bank of America Corp.
@@ -31,9 +30,9 @@ banks:
     sources:
       investor_relations: https://investor.bankofamerica.com
     filings:
-      10-K: [FY]
-      10-Q: [Q1, Q2, Q3, Q4]
-      8-K: [FY]
+      10-K: [Q4]
+      10-Q: [Q1, Q2, Q3]
+      annual_report: [FY]
     aliases: [Bank of America, BAC]
 
   - name: Citigroup Inc.
@@ -45,7 +44,7 @@ banks:
       investor_relations: https://www.citigroup.com/global/investors
     filings:
       10-K: [FY]
-      10-Q: [Q1, Q2, Q3, Q4]
+      10-Q: [Q1, Q2, Q3]
       8-K: [FY]
     aliases: [Citi]
 
@@ -58,7 +57,7 @@ banks:
       investor_relations: https://www.wellsfargo.com/about/investor-relations
     filings:
       10-K: [FY]
-      10-Q: [Q1, Q2, Q3, Q4]
+      10-Q: [Q1, Q2, Q3]
       8-K: [FY]
     aliases: [Wells Fargo]
 
@@ -71,7 +70,7 @@ banks:
       investor_relations: https://www.goldmansachs.com/investor-relations
     filings:
       10-K: [FY]
-      10-Q: [Q1, Q2, Q3, Q4]
+      10-Q: [Q1, Q2, Q3]
       8-K: [FY]
     aliases: [Goldman, Sachs]
 
@@ -84,7 +83,7 @@ banks:
       investor_relations: https://www.morganstanley.com/about-us-ir
     filings:
       10-K: [FY]
-      10-Q: [Q1, Q2, Q3, Q4]
+      10-Q: [Q1, Q2, Q3]
       8-K: [FY]
     aliases: [Morgan Stanley, MS]
 
@@ -98,7 +97,7 @@ banks:
     filings:
       annual_report: [FY]
       interim_report: [H1, H2]
-      quarterly_report: [Q1, Q2, Q3, Q4]
+      quarterly_report: [Q1, Q2, Q3]
     aliases: [ICBC, Industrial and Commercial Bank, 工商银行]
 
   - name: China Construction Bank (CCB)
@@ -110,7 +109,7 @@ banks:
     filings:
       annual_report: [FY]
       interim_report: [H1, H2]
-      quarterly_report: [Q1, Q2, Q3, Q4]
+      quarterly_report: [Q1, Q2, Q3]
     aliases: [CCB, China Construction Bank, 建设银行, 建行]
 
   - name: Agricultural Bank of China (ABC)
@@ -122,7 +121,7 @@ banks:
     filings:
       annual_report: [FY]
       interim_report: [H1, H2]
-      quarterly_report: [Q1, Q2, Q3, Q4]
+      quarterly_report: [Q1, Q2, Q3]
     aliases: [ABC, Agricultural Bank of China, 农业银行, 农行]
 
   - name: Bank of China (BOC)
@@ -134,7 +133,7 @@ banks:
     filings:
       annual_report: [FY]
       interim_report: [H1, H2]
-      quarterly_report: [Q1, Q2, Q3, Q4]
+      quarterly_report: [Q1, Q2, Q3]
     aliases: [BOC, Bank of China, 中国银行]
 
   - name: Bank of Communications (BoCom)
@@ -146,7 +145,7 @@ banks:
     filings:
       annual_report: [FY]
       interim_report: [H1, H2]
-      quarterly_report: [Q1, Q2, Q3, Q4]
+      quarterly_report: [Q1, Q2, Q3]
     aliases: [BoCom, Bank of Communications, 交通银行]
 
   - name: Postal Savings Bank of China (PSBC)
@@ -158,7 +157,7 @@ banks:
     filings:
       annual_report: [FY]
       interim_report: [H1, H2]
-      quarterly_report: [Q1, Q2, Q3, Q4]
+      quarterly_report: [Q1, Q2, Q3]
     aliases: [PSBC, Postal Savings Bank, 邮储银行]
 
   - name: China Merchants Bank (CMB)
@@ -170,7 +169,7 @@ banks:
     filings:
       annual_report: [FY]
       interim_report: [H1, H2]
-      quarterly_report: [Q1, Q2, Q3, Q4]
+      quarterly_report: [Q1, Q2, Q3]
     aliases: [CMB, China Merchants Bank, 招商银行]
 
   - name: Ping An Bank Co. Ltd.
@@ -182,7 +181,7 @@ banks:
     filings:
       annual_report: [FY]
       interim_report: [H1, H2]
-      quarterly_report: [Q1, Q2, Q3, Q4]
+      quarterly_report: [Q1, Q2, Q3]
     aliases: [Ping An Bank, 平安银行]
 
   - name: Hangzhou Bank Co. Ltd.
@@ -194,7 +193,7 @@ banks:
     filings:
       annual_report: [FY]
       interim_report: [H1, H2]
-      quarterly_report: [Q1, Q2, Q3, Q4]
+      quarterly_report: [Q1, Q2, Q3]
     aliases: [Hangzhou Bank, 杭州银行]
 
   # ── Hong Kong (HKEX) ──────────────────────────────────────────────────
@@ -207,7 +206,7 @@ banks:
     filings:
       annual_report: [FY]
       interim_report: [H1, H2]
-      quarterly_report: [Q1, Q2, Q3, Q4]
+      quarterly_report: [Q1, Q2, Q3]
     aliases: [BOCHK, Bank of China Hong Kong, 中银香港]
 
   - name: Hang Seng Bank Ltd.
@@ -219,7 +218,7 @@ banks:
     filings:
       annual_report: [FY]
       interim_report: [H1, H2]
-      quarterly_report: [Q1, Q2, Q3, Q4]
+      quarterly_report: [Q1, Q2, Q3]
     aliases: [Hang Seng Bank, 恒生银行]
 
   - name: Standard Chartered PLC
@@ -231,7 +230,7 @@ banks:
     filings:
       annual_report: [FY]
       interim_report: [H1, H2]
-      quarterly_report: [Q1, Q2, Q3, Q4]
+      quarterly_report: [Q1, Q2, Q3]
     aliases: [Standard Chartered, SC, 渣打]
 
   - name: Bank of East Asia Ltd.
@@ -243,7 +242,7 @@ banks:
     filings:
       annual_report: [FY]
       interim_report: [H1, H2]
-      quarterly_report: [Q1, Q2, Q3, Q4]
+      quarterly_report: [Q1, Q2, Q3]
     aliases: [Bank of East Asia, BEA, 东亚银行]
 
   - name: Dah Sing Financial Holdings Ltd.
@@ -255,7 +254,7 @@ banks:
     filings:
       annual_report: [FY]
       interim_report: [H1, H2]
-      quarterly_report: [Q1, Q2, Q3, Q4]
+      quarterly_report: [Q1, Q2, Q3]
     aliases: [Dah Sing, 大新银行]
 
   # ── United Kingdom (LSE) ──────────────────────────────────────────────
@@ -280,7 +279,7 @@ banks:
     filings:
       annual_report: [FY]
       interim_report: [H1, H2]
-      quarterly_report: [Q1, Q2, Q3, Q4]
+      quarterly_report: [Q1, Q2, Q3]
       6-K: [FY]
     aliases: [Barclays, BARC]
 
@@ -289,11 +288,10 @@ banks:
     exchange: LSE
     market: UK
     sources:
-      investor_relations: https://www.lloydsbankinggroup.com/investors
+      investor_relations: https://www.lloydsbankinggroup.com/investors/financial-downloads.html
     filings:
-      annual_report: [FY]
-      interim_report: [H1, H2]
-      quarterly_report: [Q1, Q2, Q3, Q4]
+      annual_report: [FY, pillar3]
+      quarterly_report: [Q1, Q2, Q3]
     aliases: [Lloyds]
 
   - name: NatWest Group plc
@@ -305,7 +303,7 @@ banks:
     filings:
       annual_report: [FY]
       interim_report: [H1, H2]
-      quarterly_report: [Q1, Q2, Q3, Q4]
+      quarterly_report: [Q1, Q2, Q3]
     aliases: [NatWest, RBS]
 
   - name: Standard Chartered PLC
@@ -317,5 +315,5 @@ banks:
     filings:
       annual_report: [FY]
       interim_report: [H1, H2]
-      quarterly_report: [Q1, Q2, Q3, Q4]
+      quarterly_report: [Q1, Q2, Q3]
     aliases: [Standard Chartered, SC, 渣打]
