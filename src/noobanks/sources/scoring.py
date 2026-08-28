@@ -81,7 +81,7 @@ def score_candidate(
         )
 
     if aliases:
-        alias_keywords = {"__alias__": list(aliases)}
+        alias_keywords = {"__alias__": [a.lower() for a in aliases]}
         score += _keyword_match_score(
             url_lower, text_lower, alias_keywords, "__alias__",
             text_match_weight=4, url_match_weight=3,

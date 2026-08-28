@@ -99,7 +99,7 @@ class SourceAdapter(ABC):
         *,
         timeout: int = 30,
         user_agent: str = DEFAULT_USER_AGENT,
-        rate_limit_delay: float = 0.5,
+        rate_limit_delay: float = 3.0,
     ):
         self.data_dir = Path(data_dir)
         self.timeout = timeout

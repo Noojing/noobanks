@@ -61,6 +61,12 @@ noobanks list banks
 noobanks list reports --year 2025
 ```
 
+## debug via vscode
+
+```bash
+# uv run python -m debugpy --wait-for-client --listen 0.0.0.0:5678 -m noobanks [command]
+```
+
 ## Configuration
 
 | File | Purpose |
@@ -100,6 +106,8 @@ CI runs on Python 3.14 via GitHub Actions (`.github/workflows/ci.yml`).
 - parallelise search of multiple reports if needed for the same bank
 - validate doc by reading first few pages
 - disable ddgs by default
+- citi: failed in fetching heads
+- loyds: failed in fetching contents
 
 ### Metrics:
 - Allowance Coverage Ratio: Loan Loss Reserves / Non-Performing Loans × 100%)

@@ -25,9 +25,7 @@ from noobanks.processing.parser import (
     markdown_to_pages,
     parse_to_markdown,
 )
-from noobanks.sources import CompositeAdapter
-from noobanks.sources.ddgs_adapter import DdgsAdapter
-from noobanks.sources.ir_adapter import IrAdapter
+from noobanks.sources import CompositeAdapter, DdgsAdapter, IrAdapter
 from noobanks.storage import ReportStore
 from noobanks.storage.store import DEFAULT_DATA_DIR
 

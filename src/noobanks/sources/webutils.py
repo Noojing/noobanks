@@ -14,7 +14,6 @@ from bs4 import BeautifulSoup
 from noobanks.sources.keywords import (
     NAV_EXCLUDE_TEXT,
     NAV_KEYWORDS,
-    REPORT_PATTERNS,
 )
 
 logger = logging.getLogger(__name__)
@@ -23,34 +22,21 @@ logger = logging.getLogger(__name__)
 def extract_pdf_links(
     html: str,
     base_url: str,
-    report_type: str,
-    year_str: str,
-    *,
-    report_patterns: Optional[dict[str, list[str]]] = None,
 ) -> list[tuple[str, str]]:
-    """Parse HTML and extract PDF hrefs matching the report type + year.
+    """Parse HTML and extract all PDF hrefs.
 
-    A PDF link is returned when both year and report-type information
-    are present, though they may appear in different signals:
-    - Year may appear in the href or the <a> tag text.
-    - Report-type keywords may appear in the href or the <a> tag text.
+    Returns every link whose href ends with ``.pdf``.  Relevance filtering
+    (year, report type, etc.) is deferred to the scoring step so that no
+    candidate is missed by pre-filtering.
 
     Args:
         html: Raw HTML of the page.
         base_url: Base URL for resolving relative links.
-        report_type: Target report type key (e.g. "annual_report", "10-K").
-        year_str: 4-digit year as string (e.g. "2025").
-        report_patterns: Dict of report_type -> pattern list. If None,
-            uses the default REPORT_PATTERNS from the keywords module.
 
     Returns:
         List of (url, anchor_text) tuples.  Anchor text is the stripped
         text of the <a> tag, or an empty string when unavailable.
     """
-    if report_patterns is None:
-        report_patterns = REPORT_PATTERNS
-    patterns = [p.lower() for p in report_patterns.get(report_type, [report_type.lower()])]
-    year_short = year_str[2:]
 
     soup = BeautifulSoup(html, "lxml")
     links: list[tuple[str, str]] = []
@@ -66,27 +52,10 @@ def extract_pdf_links(
         if not href_lower.endswith(".pdf"):
             continue
 
-        link_text = a_tag.get_text(strip=True)
-
-        year_present = (
-            year_str in href
-            or year_short in href
-            or year_str in link_text
-            or year_short in link_text
-            or year_str in base_url
-            or year_short in base_url
-        )
-
-        type_present = any(
-            p in href_lower or p in link_text.lower() or p in base_url.lower()
-            for p in patterns
-        )
-
-        if year_present and type_present:
-            full_url = urljoin(base_url, href)
-            if full_url not in seen:
-                seen.add(full_url)
-                links.append((full_url, link_text))
+        full_url = urljoin(base_url, href)
+        if full_url not in seen:
+            seen.add(full_url)
+            links.append((full_url, str(a_tag)))
 
     return links
 
@@ -187,7 +156,6 @@ async def validate_doc_url(
 
             if resp.status != 200:
                 logger.debug("HEAD %s → HTTP %d", url, resp.status)
-                return None
 
             return content_type
     except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
@@ -272,7 +240,7 @@ async def crawl_pdf_link(
 
         html = None
         for getter in page_getters:
-            logger.debug("\ttrying via %s", getter.__name__)
+            logger.debug("\ttrying via %s", getter.__qualname__)
             type = await validate_doc_url(url)
             if type is None or "html" not in type:
                 logger.debug("\turl has type [%s]; skipped", type or "N/A")
@@ -304,7 +272,7 @@ async def crawl_pdf_link(
                 )
                 continue
 
-        pdf_links = extract_pdf_links(html, url, report_type, year_str)
+        pdf_links = extract_pdf_links(html, url)
         logger.debug(
             "\t[%d] PDF links found",
             len(pdf_links),
@@ -332,7 +300,11 @@ async def crawl_pdf_link(
             if validator:
                 type = await validator(link)
                 if type is None or "pdf" not in type:
-                    logger.debug("\t\tskip invalid PDF (HEAD failed): %s", link)
+                    logger.debug(
+                        "\t\tskip invalid PDF (HEAD failed - type [%s]): %s",
+                        type or "N/A",
+                        link,
+                    )
                     continue
 
             logger.info(

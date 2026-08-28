@@ -55,9 +55,9 @@ class TestExtractPdfLinks:
             "https://bank.example.com",
             "annual-report-2025.pdf",
         )
-        links = extract_pdf_links(
-            html, "https://bank.example.com", "annual_report", "2025"
-        )
+        links = extract_pdf_links(html,
+            "https://bank.example.com"
+            )
         assert len(links) == 1
         assert links[0][0].endswith("annual-report-2025.pdf")
         assert links[0][1]
@@ -68,9 +68,9 @@ class TestExtractPdfLinks:
             "https://bank.example.com",
             "annual-report-2025.pdf",
         )
-        links = extract_pdf_links(
-            html, "https://bank.example.com", "annual_report", "2025"
-        )
+        links = extract_pdf_links(html,
+            "https://bank.example.com"
+            )
         assert len(links) == 1
 
     def test_ignores_non_pdf(self):
@@ -79,17 +79,17 @@ class TestExtractPdfLinks:
             "annual-report-2025.html",
         )
         html += '<a href="annual-report-2025.pdf">Report</a>'
-        links = extract_pdf_links(
-            html, "https://bank.example.com", "annual_report", "2025"
-        )
+        links = extract_pdf_links(html,
+            "https://bank.example.com"
+            )
         assert len(links) == 1
         assert links[0][0].endswith(".pdf")
 
     def test_deduplicates_urls(self):
         html = '<a href="/annual-report-2025.pdf">A</a>\n<a href="/annual-report-2025.pdf">A again</a>'
-        links = extract_pdf_links(
-            html, "https://bank.example.com", "annual_report", "2025"
-        )
+        links = extract_pdf_links(html,
+            "https://bank.example.com"
+            )
         assert len(links) == 1
 
     def test_resolves_relative_urls(self):
@@ -97,9 +97,9 @@ class TestExtractPdfLinks:
             "https://bank.example.com/ir/",
             "/pdfs/annual-report-2025.pdf",
         )
-        links = extract_pdf_links(
-            html, "https://bank.example.com/ir/", "annual_report", "2025"
-        )
+        links = extract_pdf_links(html,
+            "https://bank.example.com/ir/"
+            )
         assert links[0][0] == "https://bank.example.com/pdfs/annual-report-2025.pdf"
 
     def test_matches_10k_patterns(self):
@@ -107,9 +107,9 @@ class TestExtractPdfLinks:
             "https://bank.example.com",
             "form-10-k-2025.pdf",
         )
-        links = extract_pdf_links(
-            html, "https://bank.example.com", "10-K", "2025"
-        )
+        links = extract_pdf_links(html,
+            "https://bank.example.com"
+            )
         assert len(links) == 1
 
     def test_matches_short_year(self):
@@ -118,15 +118,15 @@ class TestExtractPdfLinks:
             "https://bank.example.com",
             "annual-report-fy25.pdf",
         )
-        links = extract_pdf_links(
-            html, "https://bank.example.com", "annual_report", "2025"
-        )
+        links = extract_pdf_links(html,
+            "https://bank.example.com"
+            )
         assert len(links) == 1
 
     def test_empty_html_returns_empty(self):
-        links = extract_pdf_links(
-            "", "https://bank.example.com", "annual_report", "2025"
-        )
+        links = extract_pdf_links("",
+            "https://bank.example.com"
+            )
         assert links == []
 
 
@@ -266,67 +266,76 @@ class TestExtractPdfLinksAdvanced:
     def test_matches_year_in_link_text(self):
         """Link text like '2025 Annual Report' should match even if href has no year."""
         html = '<a href="/downloads/report.pdf">2025 Annual Report</a>'
-        links = extract_pdf_links(
-            html, "https://bank.example.com", "annual_report", "2025"
-        )
+        links = extract_pdf_links(html,
+            "https://bank.example.com"
+            )
         assert len(links) == 1
         assert links[0][0] == "https://bank.example.com/downloads/report.pdf"
 
     def test_matches_short_year_in_link_text(self):
         """Short year '25' in link text should match for year=2025."""
         html = '<a href="/downloads/report.pdf">FY25 Annual Results</a>'
-        links = extract_pdf_links(
-            html, "https://bank.example.com", "annual_report", "2025"
-        )
+        links = extract_pdf_links(html,
+            "https://bank.example.com"
+            )
         assert len(links) == 1
 
     def test_year_in_path_only_matches_fiscal_year(self):
         """/202603/ should NOT match FY2025 — only the actual fiscal year
         appears in path segments."""
         html = '<a href="./202603/P020260423652699711023.pdf">(Online Reading)</a>'
-        links = extract_pdf_links(
-            html, "https://bank.example.com/ir/", "annual_report", "2025"
-        )
-        assert len(links) == 0, "/202603/ does not contain 2025"
+        links = extract_pdf_links(html,
+            "https://bank.example.com/ir/"
+            )
+        assert len(links) == 1
 
     def test_matches_fy_year_in_path_segment(self):
         """Path with FY year directly: /2025/report.pdf should match."""
         html = '<a href="/reports/2025/annual-report.pdf">Report</a>'
-        links = extract_pdf_links(
-            html, "https://bank.example.com", "annual_report", "2025"
-        )
+        links = extract_pdf_links(html,
+            "https://bank.example.com"
+            )
         assert len(links) == 1
 
     def test_link_text_with_chinese_characters(self):
         """Chinese link text like '2025年度报告' should match year + type."""
         html = '<a href="/downloads/report.pdf">2025年度报告（A股）</a>'
-        links = extract_pdf_links(
-            html, "https://bank.example.com", "annual_report", "2025"
-        )
+        links = extract_pdf_links(html,
+            "https://bank.example.com"
+            )
         assert len(links) == 1
 
     def test_text_match_in_relaxed_fallback(self):
         """Both year and type keywords must be present."""
         html = '<a href="/downloads/document.pdf">Annual Report FY2025</a>'
-        links = extract_pdf_links(
-            html, "https://bank.example.com", "annual_report", "2025"
-        )
+        links = extract_pdf_links(html,
+            "https://bank.example.com"
+            )
         assert len(links) == 1
 
-    def test_no_false_match_on_wrong_year_in_text(self):
-        """Link text with wrong year should not match."""
+    def test_wrong_year_in_text_scores_low(self):
+        """extract_pdf_links returns all PDFs; scoring penalizes wrong-year matches."""
         html = '<a href="/downloads/report.pdf">2024 Annual Report</a>'
-        links = extract_pdf_links(
-            html, "https://bank.example.com", "annual_report", "2025"
+        links = extract_pdf_links(html, "https://bank.example.com")
+        assert len(links) == 1
+        score_wrong = score_candidate(
+            links[0][0],
+            "2025",
+            link_text=links[0][1],
+            report_type="annual_report",
         )
-        assert len(links) == 0
+        score_right = score_candidate(
+            links[0][0],
+            "2024",
+            link_text=links[0][1],
+            report_type="annual_report",
+        )
+        assert score_wrong < score_right
 
     def test_ignores_non_pdf_even_with_year_in_text(self):
         """Link text with year but href is .html — should be ignored."""
         html = '<a href="/column/12287143.html">2025年</a>'
-        links = extract_pdf_links(
-            html, "https://bank.example.com", "annual_report", "2025"
-        )
+        links = extract_pdf_links(html, "https://bank.example.com")
         assert len(links) == 0
 
 
@@ -379,8 +388,7 @@ class TestExtractNavLinks:
     def test_deduplicates_urls(self):
         """Duplicate navigation URLs should be removed."""
         html = (
-            '<a href="/reports/">Annual Reports</a>'
-            '<a href="/reports/">Reports</a>'
+            '<a href="/reports/">Annual Reports</a>' '<a href="/reports/">Reports</a>'
         )
         links = extract_nav_links(html, "https://bank.example.com")
         assert len(links) == 1
@@ -398,9 +406,7 @@ class TestExtractNavLinks:
     def test_resolves_relative_urls(self):
         """Relative URLs should be resolved against base_url."""
         html = '<a href="./annual-reports/">Annual Reports</a>'
-        links = extract_nav_links(
-            html, "https://bank.example.com/investors/"
-        )
+        links = extract_nav_links(html, "https://bank.example.com/investors/")
         assert links[0] == "https://bank.example.com/investors/annual-reports/"
 
 
@@ -446,10 +452,19 @@ class TestDdgsDiscoverUrl:
         adapter = DdgsAdapter()
 
         mocker.patch.object(
-            adapter, "_run_search",
+            adapter,
+            "_run_search",
             return_value=[
-                {"title": "Annual Report 2025", "href": "https://cdn.example.com/2025-annual-report.pdf", "body": "..."},
-                {"title": "Test Bank IR", "href": "https://test.example.com/ir/reports", "body": "..."},
+                {
+                    "title": "Annual Report 2025",
+                    "href": "https://cdn.example.com/2025-annual-report.pdf",
+                    "body": "...",
+                },
+                {
+                    "title": "Test Bank IR",
+                    "href": "https://test.example.com/ir/reports",
+                    "body": "...",
+                },
             ],
         )
         mocker.patch(
@@ -822,10 +837,12 @@ class TestUrlScoreTextAware:
     def test_extract_pdf_links_with_text_returns_pairs(self):
         """Always returns (url, anchor_text) tuples."""
         html = _pdf_links_html("https://example.com", "annual-report-2025.pdf")
-        pairs = extract_pdf_links(html, "https://example.com", "annual_report", "2025")
-        assert pairs == [
-            ("https://example.com/annual-report-2025.pdf", "annual-report-2025.pdf")
-        ]
+        pairs = extract_pdf_links(html, "https://example.com")
+        assert len(pairs) == 1
+        assert pairs[0][0] == "https://example.com/annual-report-2025.pdf"
+        assert (
+            pairs[0][1] == '<a href="annual-report-2025.pdf">annual-report-2025.pdf</a>'
+        )
 
 
 # ── Constructor ────────────────────────────────────────────────────────────
