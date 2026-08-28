@@ -53,9 +53,11 @@ class Report:
 
 @dataclass
 class FetchResult:
-    """Result of a fetch operation for a single bank."""
+    """Result of a fetch operation for a single report spec."""
 
     bank: BankSpec
+    report_type: str = ""
+    period: str = ""
     report: Report | None = None
     error: str | None = None
 
@@ -165,16 +167,63 @@ class SourceAdapter(ABC):
         year: int,
         period: str,
     ) -> Report:
-        """Download a PDF report with retry and validation."""
+        """Download a PDF report with retry and validation.
+
+        Retrieves the file at *url*, validates it is a real PDF (``%PDF``
+        magic header), writes it to *target*, and returns a
+        :class:`Report` metadata object.
+
+        Retry behavior (via ``tenacity``):
+            Up to 3 attempts with exponential backoff (2s → 4s → 8s, capped
+            at 30s).  Only retries on :exc:`aiohttp.ClientError` and
+            :exc:`asyncio.TimeoutError`; validation errors (non-200 status,
+            missing PDF header) are **not** retried — they fail immediately
+            with the reason logged.
+
+        Pipeline steps:
+            1. Rate-limit the request to *url*'s domain via
+               :meth:`_rate_limit`.
+            2. Ensure the parent directory of *target* exists.
+            3. Issue a GET request (following up to 5 redirects).
+            4. Verify the response status is 200; raise
+               :exc:`aiohttp.ClientResponseError` otherwise.
+            5. Validate the response body starts with ``%PDF``.
+            6. Write the content to *target*, compute SHA-256 hash, and
+               log the download.
+
+        Args:
+            url: Direct URL to the PDF file.
+            target: Destination file path (parent directory is created
+                if missing).
+            bank: Bank specification — used for logging and :class:`Report`
+                metadata.
+            report_type: Report type key (e.g. ``"annual_report"``,
+                ``"10-K"``).
+            year: Fiscal year of the report.
+            period: Period string (e.g. ``"FY"``, ``"Q1"``).
+
+        Returns:
+            A :class:`Report` instance with the downloaded file's metadata
+            (path, size, SHA-256 hash, source URL).
+
+        Raises:
+            aiohttp.ClientResponseError: If the server returns a non-200
+                HTTP status (e.g. 404, 403).
+            ValueError: If the downloaded content does not start with
+                the ``%PDF`` magic header (corrupted or wrong file type).
+            aiohttp.ClientError: On network-level failures (retried up to
+                3 times before re-raising).
+            asyncio.TimeoutError: On request timeout (retried up to 3 times
+                before re-raising).
+        """
+
         domain = urlparse(url).netloc
         await self._rate_limit(domain)
 
         target.parent.mkdir(parents=True, exist_ok=True)
         session = self._get_session()
 
-        async with session.get(
-            url, allow_redirects=True, max_redirects=5
-        ) as resp:
+        async with session.get(url, allow_redirects=True, max_redirects=5) as resp:
             if resp.status != 200:
                 raise aiohttp.ClientResponseError(
                     request_info=resp.request_info,
@@ -197,7 +246,10 @@ class SourceAdapter(ABC):
 
         logger.info(
             "Downloaded %s (%s) → %s (%.1f MB)",
-            bank.ticker, report_type, target.name, file_size / (1024 * 1024),
+            bank.ticker,
+            report_type,
+            target.name,
+            file_size / (1024 * 1024),
         )
 
         return Report(
@@ -216,72 +268,124 @@ class SourceAdapter(ABC):
     async def fetch(
         self,
         bank: BankSpec,
-        report_type: str,
         year: int,
-        period: str = "FY",
+        report_specs: list[tuple[str, str]],
         *,
         force: bool = False,
-    ) -> FetchResult:
+    ) -> list[FetchResult]:
         """Fetch reports for a bank — template method.
 
-        1. Check local cache (skip if already downloaded)
-        2. Call :meth:`discover_url` for the first valid candidate URL
-        3. Download the verified PDF
+        Accepts a list of ``(report_type, period)`` tuples and returns a
+        :class:`FetchResult` for each.  The default implementation
+        iterates over *report_specs* sequentially, checking the local
+        cache, discovering the URL via :meth:`discover_urls`, and downloading
+        the PDF.
+
+        Subclasses **may override** this method to batch-optimise (e.g.
+        crawl the site once and extract multiple PDF links in a
+        single pass).  The default sequential behaviour is a safe fallback.
+
+        Pipeline steps (per spec):
+            1. Check local cache (skip if already downloaded unless *force*).
+            2. Call :meth:`discover_urls` for the first valid candidate URL per spec.
+            3. Download the verified PDF via :meth:`_download`.
+
+        Args:
+            bank: Bank specification from config.
+            year: Fiscal year to fetch.
+            report_specs: List of ``(report_type, period)`` tuples to fetch
+                (e.g. ``[("10-K", "Q4"), ("quarterly_report", "Q1")]``).
+            force: If ``True``, re-download even if a local file exists.
+
+        Returns:
+            A list of :class:`FetchResult` instances — one per input spec,
+            in the same order as *report_specs*.
         """
-        result = FetchResult(bank=bank)
-        target = self.target_path(
-            self.data_dir, year, bank.ticker_safe, report_type, period
-        )
 
-        if not force and target.exists():
-            logger.info("Already downloaded, skipping: %s", target.name)
-            result.report = Report(
-                bank_ticker=bank.ticker,
-                report_type=report_type,
-                year=year,
-                period=period,
-                local_path=target,
-                downloaded_from="(stored)",
-                file_size=target.stat().st_size,
+        results: list[FetchResult] = []
+
+        tocache_specs: list[tuple[str, str]] = []
+        tocache_targets: dict[tuple[str, str], Path] = {}
+
+        for report_type, period in report_specs:
+            target = self.target_path(
+                self.data_dir, year, bank.ticker_safe, report_type, period
             )
-            return result
+            if not force and target.exists():
+                logger.info("Already downloaded, skipping: %s", target.name)
+                result = FetchResult(
+                    bank=bank,
+                    report_type=report_type,
+                    period=period,
+                    report=Report(
+                        bank_ticker=bank.ticker,
+                        report_type=report_type,
+                        year=year,
+                        period=period,
+                        local_path=target,
+                        downloaded_from="(cached)",
+                        file_size=target.stat().st_size,
+                    ),
+                )
+                results.append(result)
+            else:
+                tocache_specs.append((report_type, period))
+                tocache_targets[(report_type, period)] = target
 
-        url = await self.discover_url(bank, report_type, year, period)
-        if url is None:
-            result.error = (
-                f"No PDF URL found for {bank.ticker} {report_type} {year}"
-            )
-            return result
+        if not tocache_specs:
+            return results
 
-        try:
-            report = await self._download(
-                url, target, bank, report_type, year, period
-            )
-            result.report = report
-        except Exception as exc:
-            logger.warning("Download failed for %s: %s", url, exc)
-            result.error = f"{url}: {exc}"
+        urls = await self.discover_urls(bank, year, tocache_specs)
+        for (report_type, period), url in zip(tocache_specs, urls):
+            target = tocache_targets[(report_type, period)]
+            result = FetchResult(bank=bank, report_type=report_type, period=period)
 
-        return result
+            if url is None:
+                result.error = (
+                    f"No PDF URL found for {bank.ticker} {report_type} {year}"
+                )
+                results.append(result)
+                continue
+
+            try:
+                report = await self._download(
+                    url, target, bank, report_type, year, period
+                )
+                result.report = report
+            except Exception as exc:
+                logger.warning("Download failed for %s: %s", url, exc)
+                result.error = f"{url}: {exc}"
+
+            results.append(result)
+
+        return results
 
     # ── Abstract interface ──────────────────────────────────────────────
 
     @abstractmethod
-    async def discover_url(
-        self, bank: BankSpec, report_type: str, year: int,
-        period: str = "FY",
-    ) -> Optional[str]:
-        """Discover the first valid PDF URL for the given bank/report/year.
+    async def discover_urls(
+        self,
+        bank: BankSpec,
+        year: int,
+        report_specs: list[tuple[str, str]],
+    ) -> list[Optional[str]]:
+        """Discover PDF URLs for a batch of report specs.
+
+        Accepts a list of ``(report_type, period)`` tuples and returns a
+        URL (or ``None``) for each, in the same order.  Implementations
+        **may** batch-optimise (e.g. crawl the bank's related site once
+        and match links to all specs in a single pass).
 
         Args:
             bank: Bank specification.
-            report_type: Type of report to find.
             year: Target fiscal year.
-            period: Target period (FY, Q1-Q4, H1, H2).
+            report_specs: List of ``(report_type, period)`` tuples.
 
         Returns:
-            The first valid PDF URL, or ``None`` if none found.
+            A list of URLs or ``None`` values — one per input spec,
+            in the same order as *report_specs*.
         """
+
         ...
 
     # ── Utility helpers ────────────────────────────────────────────────

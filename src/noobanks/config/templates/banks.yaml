@@ -32,7 +32,6 @@ banks:
     filings:
       10-K: [Q4]
       10-Q: [Q1, Q2, Q3]
-      annual_report: [FY]
     aliases: [bankofamerica, Bank of America, BAC]
 
   - name: Citigroup Inc.
@@ -43,9 +42,8 @@ banks:
     sources:
       investor_relations: https://www.citigroup.com/global/investors
     filings:
-      10-K: [FY]
+      10-K: [Q4]
       10-Q: [Q1, Q2, Q3]
-      8-K: [FY]
     aliases: [Citi]
 
   - name: Wells Fargo & Company
@@ -56,9 +54,8 @@ banks:
     sources:
       investor_relations: https://www.wellsfargo.com/about/investor-relations
     filings:
-      10-K: [FY]
+      10-K: [Q4]
       10-Q: [Q1, Q2, Q3]
-      8-K: [FY]
     aliases: [wellsfargo, Wells Fargo]
 
   - name: Goldman Sachs Group Inc.
@@ -67,12 +64,11 @@ banks:
     market: US
     cik: "0000886982"
     sources:
-      investor_relations: https://www.goldmansachs.com/investor-relations
+      investor_relations: https://www.goldmansachs.com/investor-relations/financials
     filings:
-      10-K: [FY]
+      10-K: [Q4]
       10-Q: [Q1, Q2, Q3]
-      8-K: [FY]
-    aliases: [Goldman, Sachs]
+    aliases: [goldmansachs, Goldman, Sachs]
 
   - name: Morgan Stanley
     ticker: MS
@@ -82,9 +78,8 @@ banks:
     sources:
       investor_relations: https://www.morganstanley.com/about-us-ir
     filings:
-      10-K: [FY]
+      10-K: [Q4]
       10-Q: [Q1, Q2, Q3]
-      8-K: [FY]
     aliases: [morganstanley, Morgan Stanley, MS]
 
   # ── China Mainland (SSE / SZSE) ───────────────────────────────────────

@@ -189,15 +189,14 @@ def fetch_bank(
             adapters=_adapters,
             data_dir=data_dir,
         ) as adapter:
-            for rtype, p in specs:
-                with _timed(f"Fetch {bank.ticker} {rtype} {p}"):
-                    result = await adapter.fetch(
-                        bank,
-                        rtype,
-                        resolved_year,
-                        p,
-                        force=force,
-                    )
+            with _timed(f"Fetch {bank.ticker} ({len(specs)} report(s))"):
+                results = await adapter.fetch(
+                    bank,
+                    resolved_year,
+                    specs,
+                    force=force,
+                )
+            for result in results:
                 if result.report:
                     succeeded.append(result)
                     console.print(
@@ -208,9 +207,9 @@ def fetch_bank(
                     )
                 if result.error:
                     failed.append(result)
-                    console.print(f"  [red]✗[/red] {rtype} {p}: {result.error}")
-                if not result.report and not result.error:
-                    console.print(f"  [yellow]No results[/yellow] for {rtype} {p}")
+                    console.print(
+                        f"  [red]✗[/red] {result.report_type} {result.period}: {result.error}"
+                    )
         return succeeded, failed
 
     succeeded, failed = _run_async(_fetch_all_specs())
@@ -294,15 +293,14 @@ def fetch_all(
             async def _fetch_one(bank: BankSpec):
                 async with sem:
                     _, specs = _resolve_filings(bank, year, report_type, period)
-                    bank_ok, bank_fail = [], []
-                    for rtype, p in specs:
-                        result = await adapter.fetch(
-                            bank, rtype, resolved_year, p, force=force,
-                        )
-                        if result.report:
-                            bank_ok.append(result)
-                        if result.error:
-                            bank_fail.append(result)
+                    bank_results = await adapter.fetch(
+                        bank,
+                        resolved_year,
+                        specs,
+                        force=force,
+                    )
+                    bank_ok = [r for r in bank_results if r.report]
+                    bank_fail = [r for r in bank_results if r.error]
                     return bank, bank_ok, bank_fail
 
             tasks = [_fetch_one(bank) for bank in banks]
@@ -322,8 +320,7 @@ def fetch_all(
                     )
                 if bank_fail:
                     console.print(
-                        f"{prefix} [red]✗[/red] "
-                        f"{len(bank_fail)} report(s) failed"
+                        f"{prefix} [red]✗[/red] " f"{len(bank_fail)} report(s) failed"
                     )
                 if not bank_ok and not bank_fail:
                     console.print(f"{prefix} [dim]no filings configured[/dim]")
@@ -332,7 +329,9 @@ def fetch_all(
 
     with _timed(f"Fetch all {len(banks)} banks"):
         succeeded, failed = _run_async(_fetch_all())
-    console.print(f"\n[bold]Summary:[/bold] {len(succeeded)} succeeded, {len(failed)} failed")
+    console.print(
+        f"\n[bold]Summary:[/bold] {len(succeeded)} succeeded, {len(failed)} failed"
+    )
 
 
 # ── parse ──────────────────────────────────────────────────────────────────
@@ -370,24 +369,36 @@ def _parse_one(
     markdown = parse_to_markdown(pdf_path)
     md_path.parent.mkdir(parents=True, exist_ok=True)
     md_path.write_text(markdown, encoding="utf-8")
-    return True, f"{md_path} ({len(markdown):,} chars, {count_tokens(markdown):,} tokens)"
+    return (
+        True,
+        f"{md_path} ({len(markdown):,} chars, {count_tokens(markdown):,} tokens)",
+    )
 
 
 @parse_app.command(name="bank")
 def parse_bank(
     ticker: str = typer.Argument(..., help="Bank ticker (e.g. BARC.L, 601398.SH)"),
     report_type: str = typer.Option(
-        "annual_report", "--type", "-t",
+        "annual_report",
+        "--type",
+        "-t",
         help="Report type: annual_report, 10-K, 10-Q, 8-K, 6-K, interim_report, quarterly_report, pillar3",
     ),
     year: int = typer.Option(2025, "--year", "-y", help="Fiscal year"),
-    period: str = typer.Option("FY", "--period", "-p", help="Period: FY, Q1-Q4, H1, H2"),
+    period: str = typer.Option(
+        "FY", "--period", "-p", help="Period: FY, Q1-Q4, H1, H2"
+    ),
     data_dir: Path = typer.Option(
-        DEFAULT_DATA_DIR, "--data-dir", "-d",
+        DEFAULT_DATA_DIR,
+        "--data-dir",
+        "-d",
         help="Base data directory (default: ~/.noobanks/data)",
     ),
     force: bool = typer.Option(
-        False, "--force", "-f", help="Re-parse even if already processed",
+        False,
+        "--force",
+        "-f",
+        help="Re-parse even if already processed",
     ),
 ) -> None:
     """Convert a downloaded report PDF into processed markdown."""
@@ -398,34 +409,49 @@ def parse_bank(
         raise typer.Exit(1)
 
     with _timed(f"Parse {bank.ticker}"):
-        ok, message = _parse_one(ReportStore(data_dir), bank, year, report_type, period, force)
+        ok, message = _parse_one(
+            ReportStore(data_dir), bank, year, report_type, period, force
+        )
     if not ok:
         console.print(f"[red]✗[/red] {bank.ticker}: {message}")
         raise typer.Exit(1)
-    console.print(f"Parsing [bold]{bank.name}[/bold] {_period_label(report_type, period)} {year}...")
+    console.print(
+        f"Parsing [bold]{bank.name}[/bold] {_period_label(report_type, period)} {year}..."
+    )
     console.print(f"  [green]✓[/green] {message}")
 
 
 @parse_app.command(name="all")
 def parse_all(
     report_type: str = typer.Option(
-        "annual_report", "--type", "-t",
+        "annual_report",
+        "--type",
+        "-t",
         help="Report type: annual_report, 10-K, 10-Q, 8-K, 6-K, interim_report, quarterly_report, pillar3",
     ),
     year: int = typer.Option(2025, "--year", "-y", help="Fiscal year"),
-    period: str = typer.Option("FY", "--period", "-p", help="Period: FY, Q1-Q4, H1, H2"),
+    period: str = typer.Option(
+        "FY", "--period", "-p", help="Period: FY, Q1-Q4, H1, H2"
+    ),
     data_dir: Path = typer.Option(
-        DEFAULT_DATA_DIR, "--data-dir", "-d",
+        DEFAULT_DATA_DIR,
+        "--data-dir",
+        "-d",
         help="Base data directory (default: ~/.noobanks/data)",
     ),
     market: Optional[str] = typer.Option(
         None, "--market", "-m", help="Filter by market: US, CN, HK, UK"
     ),
     force: bool = typer.Option(
-        False, "--force", "-f", help="Re-parse even if already processed",
+        False,
+        "--force",
+        "-f",
+        help="Re-parse even if already processed",
     ),
     max_workers: Optional[int] = typer.Option(
-        None, "--max-workers", "-w",
+        None,
+        "--max-workers",
+        "-w",
         help="Max parallel parses (default: half of CPU cores)",
     ),
 ) -> None:
@@ -444,7 +470,9 @@ def parse_all(
     with _timed(f"Parse all {len(banks)} banks"):
         with ProcessPoolExecutor(max_workers=workers) as executor:
             futures = {
-                executor.submit(_parse_one, store, bank, year, report_type, period, force): bank
+                executor.submit(
+                    _parse_one, store, bank, year, report_type, period, force
+                ): bank
                 for bank in banks
             }
             for future in as_completed(futures):
@@ -504,8 +532,10 @@ async def _extract_one(
 
     records = aggregator.records_for_bank(bank.ticker_safe, bank.name, year, results)
     aggregator.append_jsonl(
-        records, out_path,
-        replace_bank=bank.ticker_safe, replace_year=year,
+        records,
+        out_path,
+        replace_bank=bank.ticker_safe,
+        replace_year=year,
     )
 
     if show_metrics:
@@ -533,11 +563,15 @@ def extract_bank(
     ticker: str = typer.Argument(..., help="Bank ticker (e.g. BARC.L, 601398.SH)"),
     year: int = typer.Option(2025, "--year", "-y", help="Fiscal year"),
     data_dir: Path = typer.Option(
-        DEFAULT_DATA_DIR, "--data-dir", "-d",
+        DEFAULT_DATA_DIR,
+        "--data-dir",
+        "-d",
         help="Base data directory (default: ~/.noobanks/data)",
     ),
     force: bool = typer.Option(
-        False, "--force", "-f",
+        False,
+        "--force",
+        "-f",
         help="Re-extract even if the bank already has a record for this year",
     ),
 ) -> None:
@@ -549,9 +583,9 @@ def extract_bank(
         raise typer.Exit(1)
 
     with _timed(f"Extract {bank.ticker}"):
-        ok, message = _run_async(_extract_one(
-            ReportStore(data_dir), bank, year, force, show_metrics=True
-        ))
+        ok, message = _run_async(
+            _extract_one(ReportStore(data_dir), bank, year, force, show_metrics=True)
+        )
     if not ok:
         console.print(f"[red]✗[/red] {bank.ticker}: {message}")
         raise typer.Exit(1)
@@ -568,14 +602,18 @@ def extract_bank(
 def extract_all(
     year: int = typer.Option(2025, "--year", "-y", help="Fiscal year"),
     data_dir: Path = typer.Option(
-        DEFAULT_DATA_DIR, "--data-dir", "-d",
+        DEFAULT_DATA_DIR,
+        "--data-dir",
+        "-d",
         help="Base data directory (default: ~/.noobanks/data)",
     ),
     market: Optional[str] = typer.Option(
         None, "--market", "-m", help="Filter by market: US, CN, HK, UK"
     ),
     force: bool = typer.Option(
-        False, "--force", "-f",
+        False,
+        "--force",
+        "-f",
         help="Re-extract even if the bank already has a record for this year",
     ),
 ) -> None:
@@ -613,6 +651,7 @@ def extract_all(
 
 # ── list ───────────────────────────────────────────────────────────────────
 
+
 @list_app.command(name="banks")
 def list_banks(
     market: Optional[str] = typer.Option(
@@ -633,8 +672,7 @@ def list_banks(
 
         for bank in banks:
             filing_strs = [
-                f"{rt}: [{', '.join(ps)}]"
-                for rt, ps in bank.filings.items()
+                f"{rt}: [{', '.join(ps)}]" for rt, ps in bank.filings.items()
             ]
             table.add_row(
                 bank.ticker,
@@ -651,7 +689,9 @@ def list_banks(
 def list_reports(
     year: Optional[int] = typer.Option(None, "--year", "-y", help="Filter by year"),
     data_dir: Path = typer.Option(
-        DEFAULT_DATA_DIR, "--data-dir", "-d",
+        DEFAULT_DATA_DIR,
+        "--data-dir",
+        "-d",
         help="Base data directory (default: ~/.noobanks/data)",
     ),
 ) -> None:
@@ -680,10 +720,13 @@ def list_reports(
             table.add_row(p.name, f"{size / (1024*1024):.1f} MB", year_str)
 
     console.print(table)
-    console.print(f"[dim]Total: {len(paths)} files, {total_bytes / (1024*1024):.1f} MB[/dim]")
+    console.print(
+        f"[dim]Total: {len(paths)} files, {total_bytes / (1024*1024):.1f} MB[/dim]"
+    )
 
 
 # ── main entry point ──────────────────────────────────────────────────────
+
 
 def main() -> None:
     """Entry point for the noobanks CLI."""

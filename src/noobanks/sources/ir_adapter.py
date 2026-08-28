@@ -12,7 +12,7 @@ from noobanks.sources.base_adapter import (
     SourceAdapter,
 )
 from noobanks.sources.webutils import (
-    crawl_pdf_link,
+    crawl_pdf_links,
     make_browser_page_getter,
     make_static_page_getter,
     validate_doc_url,
@@ -35,8 +35,8 @@ class IrAdapter(SourceAdapter):
     4. High-scoring links are HEAD-verified before being returned
     5. For each page, a static (aiohttp) page getter is tried first; if the
        returned HTML is a JS shell the browser (Playwright) getter is used
-       as fallback — all within a single :func:`crawl_pdf_link` call
-    6. Returns the **first** valid PDF URL found, or ``None`` if none found
+       as fallback — all within a single :func:`crawl_pdf_links` call
+    6. Returns a list of URLs (or ``None`` entries), one per input spec.
     """
 
     def __init__(
@@ -58,10 +58,12 @@ class IrAdapter(SourceAdapter):
         self.score_threshold = score_threshold
         self.browser_max_pages = browser_max_pages
 
-    async def discover_url(
-        self, bank: BankSpec, report_type: str, year: int,
-        period: str = "FY",
-    ) -> Optional[str]:
+    async def discover_urls(
+        self,
+        bank: BankSpec,
+        year: int,
+        report_specs: list[tuple[str, str]],
+    ) -> list[Optional[str]]:
         ir_base = bank.sources.investor_relations
         year_str = str(year)
 
@@ -75,8 +77,10 @@ class IrAdapter(SourceAdapter):
         async def _validator(url: str) -> Optional[str]:
             return await validate_doc_url(url, session=session)
 
-        crawl_result = await crawl_pdf_link(
-            ir_base, report_type, year_str,
+        crawl_results = await crawl_pdf_links(
+            ir_base,
+            year_str,
+            report_specs,
             max_depth=2,
             max_pages=self.browser_max_pages,
             page_getters=[static_getter, browser_getter],
@@ -84,20 +88,31 @@ class IrAdapter(SourceAdapter):
             score_func=score_candidate,
             score_threshold=self.score_threshold,
             validator=_validator,
-            period=period,
             aliases=bank.aliases,
         )
 
-        if crawl_result is None:
-            logger.info(
-                "No valid PDF found for %s %s %s",
-                bank.ticker, report_type, year,
-            )
-            return None
+        urls: list[Optional[str]] = []
+        for spec, crawl_result in zip(report_specs, crawl_results):
+            report_type, period = spec
+            if crawl_result is None:
+                logger.info(
+                    "No valid PDF found for %s %s %s %s",
+                    bank.ticker,
+                    report_type,
+                    period,
+                    year,
+                )
+                urls.append(None)
+            else:
+                url, _ = crawl_result
+                logger.info(
+                    "Discovered URL for %s %s %s %s: %s",
+                    bank.ticker,
+                    report_type,
+                    period,
+                    year,
+                    url,
+                )
+                urls.append(url)
 
-        url, _ = crawl_result
-        logger.info(
-            "Discovered URL for %s %s %s: %s",
-            bank.ticker, report_type, year, url,
-        )
-        return url
+        return urls

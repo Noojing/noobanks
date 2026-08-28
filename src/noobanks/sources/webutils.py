@@ -192,10 +192,10 @@ async def validate_doc_url(
             await session.close()
 
 
-async def crawl_pdf_link(
+async def crawl_pdf_links(
     base_url: str,
-    report_type: str,
     year_str: str,
+    report_specs: list[tuple[str, str]],
     *,
     max_depth: int = 0,
     max_pages: Optional[int] = None,
@@ -204,10 +204,9 @@ async def crawl_pdf_link(
     score_func: Optional[Callable[..., int]] = None,
     score_threshold: int = 0,
     validator: Optional[Callable[[str], Awaitable[Optional[dict]]]] = None,
-    period: str = "FY",
     aliases: Optional[list[str]] = None,
-) -> Optional[tuple[str, str]]:
-    """BFS-crawl pages for the first valid PDF link with scoring and optional validation.
+) -> list[Optional[tuple[str, str]]]:
+    """BFS-crawl pages for valid PDF links with scoring and optional validation.
 
     Fetches pages via *page_getters* (tried in order for each page — the
     first getter to return non-JS-shell HTML is used), extracts PDF and
@@ -217,13 +216,14 @@ async def crawl_pdf_link(
     score meets *score_threshold* are considered.  When *validator* is also
     provided, high-scoring links are HEAD-verified before being returned.
 
-    Returns the **first** ``(url, anchor_text)`` tuple that passes all checks,
-    or ``None`` when no qualifying link is found after the full BFS crawl.
+    Returns a list — one entry per spec in *report_specs* — of the first
+    ``(url, anchor_text)`` tuple that passes all checks, or ``None`` when
+    no qualifying link is found for that spec after the full BFS crawl.
 
     Args:
         base_url: Starting URL for the crawl.
-        report_type: Target report type key (e.g. ``"annual_report"``).
         year_str: 4-digit year as string (e.g. ``"2025"``).
+        report_specs: List of ``(report_type, period)`` tuples to match.
         max_depth: BFS depth limit (0 = base_url only, 1 = base + nav, ...).
         max_pages: Maximum pages to fetch across all levels.  ``None`` = unlimited.
         page_getters: Ordered list of async callables ``(url) -> html`` or
@@ -237,20 +237,26 @@ async def crawl_pdf_link(
             *score_func* is set).
         validator: Optional async HEAD-validator ``(url) -> Optional[str]``.
             When provided, only links that HEAD-verify successfully are returned.
-        period: Period string passed to *score_func* (e.g. ``"FY"``, ``"Q1"``).
+        aliases: Optional list of bank name aliases for page-content filtering.
 
     Returns:
-        The first ``(url, anchor_text)`` tuple that passes all checks,
-        or ``None`` when no qualifying link is found.
+        A list matching *report_specs* length — each entry is the first
+        ``(url, anchor_text)`` tuple that passes all checks, or ``None``.
     """
 
     domain = urlparse(base_url).netloc
     visited: set[str] = set()
     pages_fetched = 0
 
+    results: list[Optional[tuple[str, str]]] = [None] * len(report_specs)
+    remaining: set[int] = set(range(len(report_specs)))
+
     queue: deque[tuple[str, int]] = deque([(base_url, 0)])
 
     while queue:
+        if not remaining:
+            break
+
         url, depth = queue.popleft()
         logger.debug("crawling: depth [%s], url [%s]", depth, url)
 
@@ -305,40 +311,50 @@ async def crawl_pdf_link(
         )
 
         for link, text in pdf_links:
-            if score_func:
-                score = score_func(
+            if not remaining:
+                break
+
+            for idx in list(remaining):
+                if results[idx] is not None:
+                    remaining.discard(idx)
+                    continue
+                rtype, period = report_specs[idx]
+
+                if score_func:
+                    score = score_func(
+                        link,
+                        year_str,
+                        rtype,
+                        link_text=text,
+                        period=period,
+                        aliases=aliases,
+                    )
+                    if score < score_threshold:
+                        logger.debug(
+                            "\t\tskip low-score PDF (score=%d < %d): %s",
+                            score,
+                            score_threshold,
+                            link,
+                        )
+                        continue
+
+                if validator:
+                    vtype = await validator(link)
+                    if vtype is None or "pdf" not in vtype:
+                        logger.debug(
+                            "\t\tskip invalid PDF (HEAD failed - type [%s]): %s",
+                            vtype or "N/A",
+                            link,
+                        )
+                        continue
+
+                logger.info(
+                    "\t\tfound valid PDF after %d pages: %s",
+                    pages_fetched,
                     link,
-                    year_str,
-                    report_type,
-                    link_text=text,
-                    period=period,
-                    aliases=aliases,
                 )
-                if score < score_threshold:
-                    logger.debug(
-                        "\t\tskip low-score PDF (score=%d < %d): %s",
-                        score,
-                        score_threshold,
-                        link,
-                    )
-                    continue
-
-            if validator:
-                type = await validator(link)
-                if type is None or "pdf" not in type:
-                    logger.debug(
-                        "\t\tskip invalid PDF (HEAD failed - type [%s]): %s",
-                        type or "N/A",
-                        link,
-                    )
-                    continue
-
-            logger.info(
-                "\t\tfound valid PDF after %d pages: %s",
-                pages_fetched,
-                link,
-            )
-            return (link, text)
+                results[idx] = (link, text)
+                remaining.discard(idx)
 
         nav_count = 0
         if depth < max_depth:
@@ -357,13 +373,15 @@ async def crawl_pdf_link(
                     nav_count,
                 )
 
-    logger.info(
-        "crawl complete: %d pages fetched, no valid PDF found for %s %s",
-        pages_fetched,
-        report_type,
-        year_str,
-    )
-    return None
+    unfound = [report_specs[i] for i, r in enumerate(results) if r is None]
+    if unfound:
+        logger.info(
+            "crawl complete: %d pages fetched, no valid PDF found for %s",
+            pages_fetched,
+            unfound,
+        )
+
+    return results
 
 
 # ── Page-getter factories ────────────────────────────────────────────
@@ -372,10 +390,10 @@ async def crawl_pdf_link(
 def make_static_page_getter(
     session: aiohttp.ClientSession,
 ) -> Callable[[str], Awaitable[Optional[str]]]:
-    """Return an aiohttp-based page getter for :func:`crawl_pdf_link`.
+    """Return an aiohttp-based page getter for :func:`crawl_pdf_links`.
 
     The returned coroutine-safe callable catches HTTP/network errors
-    and returns ``None`` so that :func:`crawl_pdf_link` can skip
+    and returns ``None`` so that :func:`crawl_pdf_links` can skip
     failing pages gracefully.
     """
 
@@ -465,7 +483,7 @@ def make_browser_page_getter(
     user_agent: str,
     stealth: bool = True,
 ) -> Callable[[str], Awaitable[Optional[str]]]:
-    """Return a Playwright-based page getter for :func:`crawl_pdf_link`.
+    """Return a Playwright-based page getter for :func:`crawl_pdf_links`.
 
     Renders pages in a headless Chromium browser.  Uses ``domcontentloaded``
     instead of ``networkidle`` to avoid hanging on JS-heavy sites.

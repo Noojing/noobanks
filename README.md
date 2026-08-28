@@ -106,7 +106,7 @@ CI runs on Python 3.14 via GitHub Actions (`.github/workflows/ci.yml`).
 - parallelise search of multiple reports if needed for the same bank
 - validate doc by reading first few pages
 - disable ddgs by default
-- citi: failed in fetching heads
+- gs: js page nav
 - loyds: failed in fetching contents
 
 ### Metrics:

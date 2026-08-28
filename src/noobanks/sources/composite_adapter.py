@@ -24,11 +24,11 @@ class CompositeAdapter(SourceAdapter):
     """Adapter that chains multiple source adapters, returning the first success.
 
     Accepts an ordered list of :class:`SourceAdapter` instances.  During
-    :meth:`discover_url` each adapter is tried in sequence — the first one
+    :meth:`discover_urls` each adapter is tried in sequence — the first one
     to return a non-``None`` URL wins.
 
     :meth:`fetch` is inherited from :class:`SourceAdapter` and automatically
-    uses the chained :meth:`discover_url`.
+    uses the chained :meth:`discover_urls`.
 
     If *adapters* is not supplied a sensible default chain is built:
 
@@ -46,13 +46,12 @@ class CompositeAdapter(SourceAdapter):
 
     def __init__(
         self,
-        adapters: Optional[list[SourceAdapter]] = None,
+        adapters: list[SourceAdapter],
         *,
         data_dir: str | Path = DEFAULT_DATA_DIR,
         timeout: int = 30,
         user_agent: str = DEFAULT_USER_AGENT,
         rate_limit_delay: float = 3.0,
-        **kwargs,
     ):
         super().__init__(
             data_dir=data_dir,
@@ -61,52 +60,51 @@ class CompositeAdapter(SourceAdapter):
             rate_limit_delay=rate_limit_delay,
         )
 
-        if adapters is None:
-            adapters = [
-                IrAdapter(
-                    data_dir=data_dir,
-                    timeout=timeout,
-                    user_agent=user_agent,
-                    rate_limit_delay=rate_limit_delay,
-                ),
-                kwargs.pop("fallback_adapter", None) or DdgsAdapter(
-                    data_dir=data_dir,
-                    timeout=timeout,
-                    user_agent=user_agent,
-                    rate_limit_delay=rate_limit_delay,
-                ),
-            ]
-
         if not adapters:
             raise ValueError("CompositeAdapter requires at least one adapter")
 
         self.adapters: list[SourceAdapter] = list(adapters)
 
-    async def discover_url(
-        self, bank: BankSpec, report_type: str, year: int,
-        period: str = "FY",
-    ) -> Optional[str]:
-        """Try each adapter in order, returning the first valid URL.
+    async def discover_urls(
+        self,
+        bank: BankSpec,
+        year: int,
+        report_specs: list[tuple[str, str]],
+    ) -> list[Optional[str]]:
+        """Try each adapter in order, returning the first valid URL per spec.
 
-        Adapters are tried sequentially so that higher-trust sources
-        (e.g. :class:`IrAdapter`) always win over lower-trust fallbacks
-        (e.g. :class:`DdgsAdapter`).
+        Each adapter is called once with the full batch of specs.
+        For each spec position, the first adapter that returns a non-``None``
+        URL wins.  Adapters are tried sequentially so that higher-trust sources.
         """
-        for adapter in self.adapters:
-            url = await adapter.discover_url(bank, report_type, year, period)
-            if url is not None:
-                logger.info(
-                    "Adapter %s found URL for %s %s %d",
-                    type(adapter).__name__,
-                    bank.ticker, report_type, year,
-                )
-                return url
 
-        logger.warning(
-            "No URL found by any adapter for %s %s %d",
-            bank.ticker, report_type, year,
-        )
-        return None
+        merged: list[Optional[str]] = [None] * len(report_specs)
+
+        for adapter in self.adapters:
+            if all(url is not None for url in merged):
+                break
+            urls = await adapter.discover_urls(bank, year, report_specs)
+            for i, url in enumerate(urls):
+                if url is not None and merged[i] is None:
+                    merged[i] = url
+                    logger.info(
+                        "Adapter %s found URL for %s %s %s %d",
+                        type(adapter).__name__,
+                        bank.ticker,
+                        report_specs[i][0],
+                        report_specs[i][1],
+                        year,
+                    )
+
+        missing = [report_specs[i] for i, url in enumerate(merged) if url is None]
+        if missing:
+            logger.warning(
+                "No URL found by any adapter for %s: %s",
+                bank.ticker,
+                missing,
+            )
+
+        return merged
 
     async def __aenter__(self) -> "CompositeAdapter":
         return self
