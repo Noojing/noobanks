@@ -127,8 +127,10 @@ async def validate_doc_url(
 ) -> Optional[str]:
     """HEAD-check a URL to retrieve its content type.
 
-    Makes a HEAD request and returns the ``Content-Type`` header on success,
-    or ``None`` if the request fails or the server returns a non-200 status.
+    Makes a HEAD request and returns the ``Content-Type`` header on success.
+    Falls back to a GET request if HEAD returns a non-200 status (e.g. when
+    a WAF blocks HEAD specifically).
+    Returns ``None`` if the request fails entirely.
 
     Args:
         url: Candidate URL to check.
@@ -145,22 +147,46 @@ async def validate_doc_url(
             headers={"User-Agent": "Mozilla/5.0"},
             timeout=aiohttp.ClientTimeout(total=15),
         )
+
     try:
-        async with session.head(
-            url,
-            timeout=aiohttp.ClientTimeout(total=15),
-            allow_redirects=True,
-            max_redirects=5,
-        ) as resp:
-            content_type = resp.headers.get("Content-Type", "")
+        try:
+            async with session.head(
+                url,
+                timeout=aiohttp.ClientTimeout(total=15),
+                allow_redirects=True,
+                max_redirects=5,
+            ) as resp:
+                content_type = resp.headers.get("Content-Type", "")
+                if resp.status != 200:
+                    logger.debug(
+                        "HEAD %s → HTTP %d, falling back to GET",
+                        url,
+                        resp.status,
+                    )
+                else:
+                    logger.debug("HEAD %s → HTTP %d", url, resp.status)
+                    return content_type
+        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+            logger.debug(
+                "HEAD %s → error: %s, falling back to GET",
+                url,
+                exc,
+            )
 
-            if resp.status != 200:
-                logger.debug("HEAD %s → HTTP %d", url, resp.status)
-
-            return content_type
-    except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
-        logger.debug("HEAD %s → error: %s", url, exc)
-        return None
+        try:
+            async with session.get(
+                url,
+                timeout=aiohttp.ClientTimeout(total=15),
+                allow_redirects=True,
+                max_redirects=5,
+            ) as resp:
+                content_type = resp.headers.get("Content-Type", "")
+                if resp.status != 200:
+                    logger.debug("GET %s → HTTP %d", url, resp.status)
+                return content_type
+        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+            logger.debug("GET %s → error: %s", url, exc)
+            return None
     finally:
         if owns_session:
             await session.close()
