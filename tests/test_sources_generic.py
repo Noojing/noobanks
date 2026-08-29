@@ -889,9 +889,9 @@ class TestCompositeAdapterInit:
         assert adapter.timeout == 30
         assert adapter.rate_limit_delay == 3.0
         assert len(adapter.adapters) == 2
-        assert adapter.adapters[0].score_threshold == 12
+        assert adapter.adapters[0].score_threshold == 13
         assert adapter.adapters[0].browser_max_pages is None
-        assert adapter.adapters[1].score_threshold == 12
+        assert adapter.adapters[1].score_threshold == 13
 
     def test_custom_values(self, tmp_path: Path):
         adapter = _make_composite_adapter(

@@ -16,10 +16,10 @@ def _keyword_match_score(
     text_lower: str,
     keywords: dict[str, list[str]],
     target: Optional[str],
-    text_match_weight: int,
-    url_match_weight: int,
-    text_other_penalty: int,
-    url_other_penalty: int,
+    text_match_weight: int = 4,
+    url_match_weight: int = 3,
+    text_other_penalty: int = 3,
+    url_other_penalty: int = 2,
 ) -> int:
     """Score keyword matches: target key rewarded, other keys penalized.
 
@@ -62,30 +62,36 @@ def score_candidate(
 
     score = 0
 
-    if year_str in text_lower:
-        score += 4
-    elif year_str in url_lower:
-        score += 3
+    year_match = {"__year__": [year_str], "__year_other__": [f"{int(year_str)-1}"]}
+    score += _keyword_match_score(
+        url_lower,
+        text_lower,
+        year_match,
+        "__year__",
+    )
 
     score += _keyword_match_score(
-        url_lower, text_lower, REPORT_TYPE_SCORE_KEYWORDS, report_type,
-        text_match_weight=4, url_match_weight=3,
-        text_other_penalty=3, url_other_penalty=2,
+        url_lower,
+        text_lower,
+        REPORT_TYPE_SCORE_KEYWORDS,
+        report_type,
     )
 
     if period and period in PERIOD_SCORE_KEYWORDS:
         score += _keyword_match_score(
-            url_lower, text_lower, PERIOD_SCORE_KEYWORDS, period,
-            text_match_weight=4, url_match_weight=3,
-            text_other_penalty=3, url_other_penalty=2,
+            url_lower,
+            text_lower,
+            PERIOD_SCORE_KEYWORDS,
+            period,
         )
 
     if aliases:
         alias_keywords = {"__alias__": [a.lower() for a in aliases]}
         score += _keyword_match_score(
-            url_lower, text_lower, alias_keywords, "__alias__",
-            text_match_weight=4, url_match_weight=3,
-            text_other_penalty=0, url_other_penalty=0,
+            url_lower,
+            text_lower,
+            alias_keywords,
+            "__alias__",
         )
 
     if any(kw in text_lower for kw in NON_REPORT_SCORE_KEYWORDS):

@@ -46,7 +46,7 @@ class IrAdapter(SourceAdapter):
         timeout: int = 30,
         user_agent: str = DEFAULT_USER_AGENT,
         rate_limit_delay: float = 3.0,
-        score_threshold: int = 12,
+        score_threshold: int = 13,
         browser_max_pages: Optional[int] = None,
     ):
         super().__init__(

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import aiohttp
 from ddgs import DDGS
@@ -49,7 +49,7 @@ class DdgsAdapter(SourceAdapter):
         user_agent: str = DEFAULT_USER_AGENT,
         rate_limit_delay: float = 3.0,
         max_results: int = DEFAULT_DDGS_MAX_RESULTS,
-        score_threshold: int = 12,
+        score_threshold: int = 13,
     ):
         super().__init__(
             data_dir=data_dir,
@@ -67,14 +67,15 @@ class DdgsAdapter(SourceAdapter):
     def _build_search_query(
         self,
         bank: BankSpec,
-        report_type: str,
         year_str: str,
+        report_type: str,
+        period: str,
     ) -> str:
         label = REPORT_TYPE_LABELS.get(
             report_type,
             report_type.replace("_", " "),
         )
-        return f"{bank.name} {year_str} {label} financial report PDF"
+        return f"{bank.name} {year_str} {period} {label} financial report PDF"
 
     async def discover_urls(
         self,
@@ -88,7 +89,7 @@ class DdgsAdapter(SourceAdapter):
 
         urls: list[Optional[str]] = []
         for report_type, period in report_specs:
-            query = self._build_search_query(bank, report_type, year_str)
+            query = self._build_search_query(bank, year_str, report_type, period)
             logger.info("DDGS search: query=%s", query)
 
             try:
