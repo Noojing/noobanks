@@ -111,44 +111,70 @@ def _resolve_filings(
     return resolved_year, specs
 
 
+# ── shared CLI option definitions ──────────────────────────────────────────
+
+
+def _opt_year(default=None, help="Fiscal year. If omitted, defaults to last year."):
+    return typer.Option(default, "--year", "-y", help=help)
+
+
+def _opt_data_dir():
+    return typer.Option(
+        DEFAULT_DATA_DIR,
+        "--data-dir",
+        "-d",
+        help="Base data directory (default: ~/.noobanks/data)",
+    )
+
+
+def _opt_report_type(help):
+    return typer.Option(None, "--type", "-t", help=help)
+
+
+def _opt_period(help):
+    return typer.Option(None, "--period", "-p", help=help)
+
+
+def _opt_force(help):
+    return typer.Option(False, "--force", "-f", help=help)
+
+
+def _opt_market():
+    return typer.Option(None, "--market", "-m", help="Filter by market: US, CN, HK, UK")
+
+
+def _arg_ticker(help="Bank ticker (e.g. BARC.L, JPM, 601398.SH)"):
+    return typer.Argument(..., help=help)
+
+
+def _opt_ddgs_fallback():
+    return typer.Option(
+        False,
+        "--ddgs-fallback",
+        help="Use DuckDuckGo web search as a fallback when IR adapter fails",
+    )
+
+
+def _opt_max_concurrent(help, default=5, flag="--concurrency", short="-c"):
+    return typer.Option(default, flag, short, help=help)
+
+
 # ── fetch ──────────────────────────────────────────────────────────────────
 
 
 @fetch_app.command(name="bank")
 def fetch_bank(
-    ticker: str = typer.Argument(..., help="Bank ticker (e.g. BARC.L, JPM, 601398.SH)"),
-    report_type: Optional[str] = typer.Option(
-        None,
-        "--type",
-        "-t",
-        help="Report type (e.g. annual_report, 10-K, 10-Q). If omitted, fetches all types.",
+    ticker: str = _arg_ticker(),
+    year: Optional[int] = _opt_year(),
+    report_type: Optional[str] = _opt_report_type(
+        "Report type (e.g. annual_report, 10-K, 10-Q). If omitted, fetches all types.",
     ),
-    year: Optional[int] = typer.Option(
-        None,
-        "--year",
-        "-y",
-        help="Fiscal year. If omitted, defaults to last year.",
+    period: Optional[str] = _opt_period(
+        "Period within type (e.g. FY, Q1-Q4, H1). If omitted, fetches all applicable periods.",
     ),
-    period: Optional[str] = typer.Option(
-        None,
-        "--period",
-        "-p",
-        help="Period within type (e.g. FY, Q1-Q4, H1). If omitted, fetches all applicable periods.",
-    ),
-    force: bool = typer.Option(
-        False, "--force", "-f", help="Re-download even if exists"
-    ),
-    data_dir: Path = typer.Option(
-        DEFAULT_DATA_DIR,
-        "--data-dir",
-        "-d",
-        help="Base data directory (default: ~/.noobanks/data)",
-    ),
-    ddgs_fallback: bool = typer.Option(
-        False,
-        "--ddgs-fallback",
-        help="Use DuckDuckGo web search as a fallback when IR adapter fails",
-    ),
+    force: bool = _opt_force("Re-download even if exists"),
+    data_dir: Path = _opt_data_dir(),
+    ddgs_fallback: bool = _opt_ddgs_fallback(),
 ) -> None:
     """Download financial reports for a specific bank.
 
@@ -221,45 +247,18 @@ def fetch_bank(
 
 @fetch_app.command(name="all")
 def fetch_all(
-    report_type: Optional[str] = typer.Option(
-        None,
-        "--type",
-        "-t",
-        help="Report type to download. If omitted, fetches all types for each bank.",
+    year: Optional[int] = _opt_year(),
+    report_type: Optional[str] = _opt_report_type(
+        "Report type to download. If omitted, fetches all types for each bank.",
     ),
-    year: Optional[int] = typer.Option(
-        None,
-        "--year",
-        "-y",
-        help="Fiscal year. If omitted, defaults to last year.",
+    period: Optional[str] = _opt_period(
+        "Period within type. If omitted, fetches all applicable periods.",
     ),
-    period: Optional[str] = typer.Option(
-        None,
-        "--period",
-        "-p",
-        help="Period within type. If omitted, fetches all applicable periods.",
-    ),
-    market: Optional[str] = typer.Option(
-        None, "--market", "-m", help="Filter by market: US, CN, HK, UK"
-    ),
-    force: bool = typer.Option(False, "--force", "-f", help="Re-download existing"),
-    data_dir: Path = typer.Option(
-        DEFAULT_DATA_DIR,
-        "--data-dir",
-        "-d",
-        help="Base data directory (default: ~/.noobanks/data)",
-    ),
-    max_concurrent: int = typer.Option(
-        5,
-        "--concurrency",
-        "-c",
-        help="Max concurrent bank fetches",
-    ),
-    ddgs_fallback: bool = typer.Option(
-        False,
-        "--ddgs-fallback",
-        help="Use DuckDuckGo web search as a fallback when IR adapter fails",
-    ),
+    market: Optional[str] = _opt_market(),
+    force: bool = _opt_force("Re-download existing"),
+    data_dir: Path = _opt_data_dir(),
+    max_concurrent: int = _opt_max_concurrent("Max concurrent bank fetches"),
+    ddgs_fallback: bool = _opt_ddgs_fallback(),
 ) -> None:
     """Download reports for all configured banks.
 
@@ -377,116 +376,142 @@ def _parse_one(
 
 @parse_app.command(name="bank")
 def parse_bank(
-    ticker: str = typer.Argument(..., help="Bank ticker (e.g. BARC.L, 601398.SH)"),
-    report_type: str = typer.Option(
-        "annual_report",
-        "--type",
-        "-t",
-        help="Report type: annual_report, 10-K, 10-Q, 8-K, 6-K, interim_report, quarterly_report, pillar3",
+    ticker: str = _arg_ticker(),
+    year: Optional[int] = _opt_year(),
+    report_type: Optional[str] = _opt_report_type(
+        "Report type (e.g. annual_report, 10-K, 10-Q). If omitted, parses all types.",
     ),
-    year: int = typer.Option(2025, "--year", "-y", help="Fiscal year"),
-    period: str = typer.Option(
-        "FY", "--period", "-p", help="Period: FY, Q1-Q4, H1, H2"
+    period: Optional[str] = _opt_period(
+        "Period within type (e.g. FY, Q1-Q4, H1). If omitted, parses all applicable periods.",
     ),
-    data_dir: Path = typer.Option(
-        DEFAULT_DATA_DIR,
-        "--data-dir",
-        "-d",
-        help="Base data directory (default: ~/.noobanks/data)",
-    ),
-    force: bool = typer.Option(
-        False,
-        "--force",
-        "-f",
-        help="Re-parse even if already processed",
-    ),
+    data_dir: Path = _opt_data_dir(),
+    force: bool = _opt_force("Re-parse even if already processed"),
 ) -> None:
-    """Convert a downloaded report PDF into processed markdown."""
+    """Convert downloaded report PDFs into processed markdown.
+
+    Resolution logic:
+    \b
+    • If --year is omitted, defaults to last year.
+    • If --type is omitted, parses all report types defined for the bank.
+    • If --period is omitted, parses all applicable periods for each type.
+    """
     registry = load_bank_registry()
     bank = registry.find(ticker)
     if bank is None:
         console.print(f"[red]Bank not found:[/red] {ticker}")
         raise typer.Exit(1)
 
-    with _timed(f"Parse {bank.ticker}"):
-        ok, message = _parse_one(
-            ReportStore(data_dir), bank, year, report_type, period, force
-        )
-    if not ok:
-        console.print(f"[red]✗[/red] {bank.ticker}: {message}")
+    resolved_year, specs = _resolve_filings(bank, year, report_type, period)
+    if not specs:
+        console.print(f"[yellow]No filings configured for {bank.ticker}[/yellow]")
         raise typer.Exit(1)
+
     console.print(
-        f"Parsing [bold]{bank.name}[/bold] {_period_label(report_type, period)} {year}..."
+        f"Parsing [bold]{bank.name}[/bold] ({bank.ticker}) "
+        f"for {len(specs)} report(s) in {resolved_year}:"
     )
-    console.print(f"  [green]✓[/green] {message}")
+    for rtype, p in specs:
+        console.print(f"  • {_period_label(rtype, p)} {resolved_year}")
+
+    store = ReportStore(data_dir)
+    parsed, skipped, failed = [], [], []
+
+    with _timed(f"Parse {bank.ticker} ({len(specs)} report(s))"):
+        for rtype, p in specs:
+            ok, message = _parse_one(store, bank, resolved_year, rtype, p, force)
+            if not ok:
+                failed.append((rtype, p))
+                console.print(f"  [red]✗[/red] {_period_label(rtype, p)}: {message}")
+            elif "already parsed" in message:
+                skipped.append((rtype, p))
+                console.print(f"  [dim]•[/dim] {_period_label(rtype, p)}: {message}")
+            else:
+                parsed.append((rtype, p))
+                console.print(
+                    f"  [green]✓[/green] {_period_label(rtype, p)}: {message}"
+                )
+
+    if len(specs) > 1:
+        console.print(
+            f"\n[bold]Summary:[/bold] {len(parsed)} parsed, "
+            f"{len(skipped)} skipped, {len(failed)} failed"
+        )
 
 
 @parse_app.command(name="all")
 def parse_all(
-    report_type: str = typer.Option(
-        "annual_report",
-        "--type",
-        "-t",
-        help="Report type: annual_report, 10-K, 10-Q, 8-K, 6-K, interim_report, quarterly_report, pillar3",
+    year: Optional[int] = _opt_year(),
+    report_type: Optional[str] = _opt_report_type(
+        "Report type to parse. If omitted, parses all types for each bank.",
     ),
-    year: int = typer.Option(2025, "--year", "-y", help="Fiscal year"),
-    period: str = typer.Option(
-        "FY", "--period", "-p", help="Period: FY, Q1-Q4, H1, H2"
+    period: Optional[str] = _opt_period(
+        "Period within type. If omitted, parses all applicable periods.",
     ),
-    data_dir: Path = typer.Option(
-        DEFAULT_DATA_DIR,
-        "--data-dir",
-        "-d",
-        help="Base data directory (default: ~/.noobanks/data)",
-    ),
-    market: Optional[str] = typer.Option(
-        None, "--market", "-m", help="Filter by market: US, CN, HK, UK"
-    ),
-    force: bool = typer.Option(
-        False,
-        "--force",
-        "-f",
-        help="Re-parse even if already processed",
-    ),
-    max_workers: Optional[int] = typer.Option(
-        None,
-        "--max-workers",
-        "-w",
-        help="Max parallel parses (default: half of CPU cores)",
+    data_dir: Path = _opt_data_dir(),
+    market: Optional[str] = _opt_market(),
+    force: bool = _opt_force("Re-parse even if already processed"),
+    max_workers: Optional[int] = _opt_max_concurrent(
+        "Max parallel parses (default: half of CPU cores)",
+        default=None,
+        flag="--max-workers",
+        short="-w",
     ),
 ) -> None:
-    """Parse every available downloaded report into processed markdown."""
+    """Parse every available downloaded report into processed markdown.
+
+    Resolution logic is applied per bank:
+    \b
+    • If --year is omitted, defaults to last year.
+    • If --type is omitted, parses all report types defined for each bank.
+    • If --period is omitted, parses all applicable periods for each type.
+    """
     registry = load_bank_registry()
     banks = registry.by_market(market) if market else list(registry.banks)
-    store = ReportStore(data_dir)
     workers = max_workers or _default_parse_workers()
+    resolved_year = year if year is not None else datetime.datetime.now().year - 1
+
+    tasks: list[tuple[BankSpec, str, str]] = []
+    for bank in banks:
+        _, specs = _resolve_filings(bank, year, report_type, period)
+        if not specs:
+            console.print(f"  [dim]{bank.ticker}: no filings configured[/dim]")
+            continue
+        for rtype, p in specs:
+            tasks.append((bank, rtype, p))
+
+    if not tasks:
+        console.print("[yellow]No filings configured for any bank.[/yellow]")
+        raise typer.Exit(1)
 
     console.print(
-        f"Parsing {len(banks)} banks for {_period_label(report_type, period)} {year} "
+        f"Parsing {len(tasks)} reports for {len(banks)} banks in {resolved_year} "
         f"(up to {workers} in parallel)..."
     )
+
+    store = ReportStore(data_dir)
     parsed, skipped, failed = [], [], []
 
     with _timed(f"Parse all {len(banks)} banks"):
         with ProcessPoolExecutor(max_workers=workers) as executor:
             futures = {
                 executor.submit(
-                    _parse_one, store, bank, year, report_type, period, force
-                ): bank
-                for bank in banks
+                    _parse_one, store, bank, resolved_year, rtype, p, force
+                ): (bank, rtype, p)
+                for bank, rtype, p in tasks
             }
             for future in as_completed(futures):
-                bank = futures[future]
+                bank, rtype, p = futures[future]
                 ok, message = future.result()
+                label = f"{bank.ticker} {_period_label(rtype, p)}"
                 if not ok:
                     failed.append(bank.ticker)
-                    console.print(f"  [red]✗[/red] {bank.ticker}: {message}")
+                    console.print(f"  [red]✗[/red] {label}: {message}")
                 elif "already parsed" in message:
                     skipped.append(bank.ticker)
-                    console.print(f"  [dim]•[/dim] {bank.ticker}: {message}")
+                    console.print(f"  [dim]•[/dim] {label}: {message}")
                 else:
                     parsed.append(bank.ticker)
-                    console.print(f"  [green]✓[/green] {bank.ticker}: {message}")
+                    console.print(f"  [green]✓[/green] {label}: {message}")
 
     console.print(
         f"\n[bold]Summary:[/bold] {len(parsed)} parsed, "
@@ -504,16 +529,18 @@ async def _extract_one(
     store: ReportStore,
     bank: BankSpec,
     year: int,
+    report_type: str,
+    period: str,
     force: bool,
     show_metrics: bool = False,
 ) -> tuple[bool, str]:
-    """Extract metrics for one bank from its processed markdown.
+    """Extract metrics for one bank/report from its processed markdown.
 
     Returns (ok, message). Skips when the bank already has a jsonl record
     for the year unless force is set. When show_metrics is True, prints a
     per-metric result line (used by the single-bank command).
     """
-    md_path = store.processed_path(year, bank.ticker_safe, "annual_report", "FY")
+    md_path = store.processed_path(year, bank.ticker_safe, report_type, period)
     if not md_path.exists():
         return False, f"report not parsed ({md_path})"
 
@@ -560,84 +587,140 @@ async def _extract_one(
 
 @extract_app.command(name="bank")
 def extract_bank(
-    ticker: str = typer.Argument(..., help="Bank ticker (e.g. BARC.L, 601398.SH)"),
-    year: int = typer.Option(2025, "--year", "-y", help="Fiscal year"),
-    data_dir: Path = typer.Option(
-        DEFAULT_DATA_DIR,
-        "--data-dir",
-        "-d",
-        help="Base data directory (default: ~/.noobanks/data)",
+    ticker: str = _arg_ticker(),
+    year: Optional[int] = _opt_year(
+        help="Fiscal year. If omitted, defaults to last year."
     ),
-    force: bool = typer.Option(
-        False,
-        "--force",
-        "-f",
-        help="Re-extract even if the bank already has a record for this year",
+    report_type: Optional[str] = _opt_report_type(
+        "Report type (e.g. annual_report, 10-K, 10-Q). If omitted, extracts all types.",
+    ),
+    period: Optional[str] = _opt_period(
+        "Period within type (e.g. FY, Q1-Q4, H1). If omitted, extracts all applicable periods.",
+    ),
+    data_dir: Path = _opt_data_dir(),
+    force: bool = _opt_force(
+        "Re-extract even if the bank already has a record for this year"
     ),
 ) -> None:
-    """Extract metrics from processed markdown into the per-year JSONL."""
+    """Extract metrics from processed markdown into the per-year JSONL.
+
+    Resolution logic:
+    \b
+    • If --year is omitted, defaults to last year.
+    • If --type is omitted, extracts all report types defined for the bank.
+    • If --period is omitted, extracts all applicable periods for each type.
+    """
     registry = load_bank_registry()
     bank = registry.find(ticker)
     if bank is None:
         console.print(f"[red]Bank not found:[/red] {ticker}")
         raise typer.Exit(1)
 
-    with _timed(f"Extract {bank.ticker}"):
-        ok, message = _run_async(
-            _extract_one(ReportStore(data_dir), bank, year, force, show_metrics=True)
-        )
-    if not ok:
-        console.print(f"[red]✗[/red] {bank.ticker}: {message}")
+    resolved_year, specs = _resolve_filings(bank, year, report_type, period)
+    if not specs:
+        console.print(f"[yellow]No filings configured for {bank.ticker}[/yellow]")
         raise typer.Exit(1)
-    if message == "already extracted":
+
+    console.print(
+        f"Extracting [bold]{bank.name}[/bold] ({bank.ticker}) "
+        f"for {len(specs)} report(s) in {resolved_year}:"
+    )
+    for rtype, p in specs:
+        console.print(f"  • {_period_label(rtype, p)} {resolved_year}")
+
+    store = ReportStore(data_dir)
+    extracted, skipped, failed = [], [], []
+
+    with _timed(f"Extract {bank.ticker} ({len(specs)} report(s))"):
+        for rtype, p in specs:
+            ok, message = _run_async(
+                _extract_one(
+                    store, bank, resolved_year, rtype, p, force, show_metrics=True
+                )
+            )
+            if not ok:
+                failed.append((rtype, p))
+                console.print(f"  [red]✗[/red] {_period_label(rtype, p)}: {message}")
+            elif message == "already extracted":
+                skipped.append((rtype, p))
+                console.print(f"  [dim]•[/dim] {_period_label(rtype, p)}: {message}")
+            else:
+                extracted.append((rtype, p))
+                console.print(
+                    f"  [green]✓[/green] {_period_label(rtype, p)}: {message}"
+                )
+
+    if len(specs) > 1:
         console.print(
-            f"[yellow]Already extracted[/yellow] {bank.ticker} FY{year} "
-            f"(use --force to re-extract)."
+            f"\n[bold]Summary:[/bold] {len(extracted)} extracted, "
+            f"{len(skipped)} skipped, {len(failed)} failed"
         )
-    else:
-        console.print(f"[green]✓[/green] {bank.ticker} FY{year}: {message}")
 
 
 @extract_app.command(name="all")
 def extract_all(
-    year: int = typer.Option(2025, "--year", "-y", help="Fiscal year"),
-    data_dir: Path = typer.Option(
-        DEFAULT_DATA_DIR,
-        "--data-dir",
-        "-d",
-        help="Base data directory (default: ~/.noobanks/data)",
+    year: Optional[int] = _opt_year(
+        help="Fiscal year. If omitted, defaults to last year."
     ),
-    market: Optional[str] = typer.Option(
-        None, "--market", "-m", help="Filter by market: US, CN, HK, UK"
+    report_type: Optional[str] = _opt_report_type(
+        "Report type to extract. If omitted, extracts all types for each bank.",
     ),
-    force: bool = typer.Option(
-        False,
-        "--force",
-        "-f",
-        help="Re-extract even if the bank already has a record for this year",
+    period: Optional[str] = _opt_period(
+        "Period within type. If omitted, extracts all applicable periods.",
+    ),
+    data_dir: Path = _opt_data_dir(),
+    market: Optional[str] = _opt_market(),
+    force: bool = _opt_force(
+        "Re-extract even if the bank already has a record for this year"
     ),
 ) -> None:
-    """Extract metrics for every available parsed report into the JSONL."""
+    """Extract metrics for every available parsed report into the JSONL.
+
+    Resolution logic is applied per bank:
+    \b
+    • If --year is omitted, defaults to last year.
+    • If --type is omitted, extracts all report types defined for each bank.
+    • If --period is omitted, extracts all applicable periods for each type.
+    """
     registry = load_bank_registry()
     banks = registry.by_market(market) if market else list(registry.banks)
     store = ReportStore(data_dir)
+    resolved_year = year if year is not None else datetime.datetime.now().year - 1
 
-    console.print(f"Extracting metrics for {len(banks)} banks FY{year}...")
+    tasks: list[tuple[BankSpec, str, str]] = []
+    for bank in banks:
+        _, specs = _resolve_filings(bank, year, report_type, period)
+        if not specs:
+            console.print(f"  [dim]{bank.ticker}: no filings configured[/dim]")
+            continue
+        for rtype, p in specs:
+            tasks.append((bank, rtype, p))
+
+    if not tasks:
+        console.print("[yellow]No filings configured for any bank.[/yellow]")
+        raise typer.Exit(1)
+
+    console.print(
+        f"Extracting {len(tasks)} reports for {len(banks)} banks in {resolved_year}..."
+    )
     extracted, skipped, failed = [], [], []
 
     async def _extract_all():
-        for i, bank in enumerate(banks):
-            ok, message = await _extract_one(store, bank, year, force)
+        for i, (bank, rtype, p) in enumerate(tasks):
+            ok, message = await _extract_one(
+                store, bank, resolved_year, rtype, p, force
+            )
+            label = f"{bank.ticker} {_period_label(rtype, p)}"
             if not ok:
                 failed.append(bank.ticker)
-                console.print(f"  [red]✗[/red] {bank.ticker}: {message}")
+                console.print(f"  [red]✗[/red] {label}: {message}")
             elif message == "already extracted":
                 skipped.append(bank.ticker)
-                console.print(f"  [dim]•[/dim] {bank.ticker}: {message}")
+                console.print(f"  [dim]•[/dim] {label}: {message}")
             else:
                 extracted.append(bank.ticker)
-                console.print(f"  [green]✓[/green] {bank.ticker}: {message}")
-            if i < len(banks) - 1:
+                console.print(f"  [green]✓[/green] {label}: {message}")
+            if i < len(tasks) - 1:
                 await asyncio.sleep(2)  # inter-bank cooldown (LLM rate limits)
         return extracted, skipped, failed
 
@@ -654,9 +737,7 @@ def extract_all(
 
 @list_app.command(name="banks")
 def list_banks(
-    market: Optional[str] = typer.Option(
-        None, "--market", "-m", help="Filter by market: US, CN, HK, UK"
-    ),
+    market: Optional[str] = _opt_market(),
 ) -> None:
     """List all configured banks."""
     registry = load_bank_registry()
@@ -687,13 +768,8 @@ def list_banks(
 
 @list_app.command(name="reports")
 def list_reports(
-    year: Optional[int] = typer.Option(None, "--year", "-y", help="Filter by year"),
-    data_dir: Path = typer.Option(
-        DEFAULT_DATA_DIR,
-        "--data-dir",
-        "-d",
-        help="Base data directory (default: ~/.noobanks/data)",
-    ),
+    year: Optional[int] = _opt_year(help="Filter by year"),
+    data_dir: Path = _opt_data_dir(),
 ) -> None:
     """List downloaded raw reports."""
     store = ReportStore(data_dir)
